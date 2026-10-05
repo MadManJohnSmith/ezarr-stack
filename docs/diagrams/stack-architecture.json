@@ -1,0 +1,1234 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "ezarr: arquitectura del stack completo",
+    "subtitle": "Un Poco X3 Pro en TWRP con un chroot de Ubuntu y sin Android: 20 servicios, dos caminos de entrada, una unión de disco local con Drive y tres vigilantes",
+    "output": "docs/diagrams/stack-architecture.html",
+    "locale": "es",
+    "animation": "none",
+    "visual_preset": "classic",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "auto"
+    },
+    "translations": {
+      "page.title": "{title} · Diagrama",
+      "diagram.description.architecture": "Un diagrama de arquitectura generado por Archify.",
+      "diagram.description.workflow": "Un diagrama de flujo de trabajo generado por Archify.",
+      "diagram.description.sequence": "Un diagrama de secuencia generado por Archify.",
+      "diagram.description.dataflow": "Un diagrama de flujo de datos generado por Archify.",
+      "diagram.description.lifecycle": "Un diagrama de ciclo de vida generado por Archify.",
+      "node.focus": "Enfocar {label}",
+      "node.focus.detail": "Enfocar {label}, {detail}",
+      "node.context.architecture": "Componente de arquitectura",
+      "node.context.workflow": "Nodo de flujo de trabajo",
+      "node.context.sequence": "Participante de secuencia",
+      "node.context.dataflow": "Nodo de flujo de datos",
+      "node.context.lifecycle": "Estado del ciclo de vida",
+      "legend.title": "Leyenda",
+      "legend.architecture.frontend": "Frontend",
+      "legend.architecture.backend": "Backend",
+      "legend.architecture.database": "Base de datos",
+      "legend.architecture.cloud": "Nube",
+      "legend.architecture.security": "Seguridad",
+      "legend.architecture.messagebus": "Bus de mensajes",
+      "legend.architecture.external": "Externo",
+      "legend.workflow.frontend": "Interfaz de usuario",
+      "legend.workflow.backend": "Lógica del agente",
+      "legend.workflow.security": "Política",
+      "legend.workflow.messagebus": "Acción de herramienta",
+      "legend.workflow.database": "Contexto / traza",
+      "legend.workflow.cloud": "Servicio en la nube",
+      "legend.workflow.external": "Sistema externo",
+      "legend.sequence.emphasis": "solicitud principal",
+      "legend.sequence.return": "respuesta",
+      "legend.sequence.security": "seguridad",
+      "legend.sequence.dashed": "traza asíncrona",
+      "legend.sequence.default": "mensaje",
+      "legend.dataflow.emphasis": "datos primarios",
+      "legend.dataflow.security": "política / PII",
+      "legend.dataflow.dashed": "lote asíncrono",
+      "legend.dataflow.database": "almacén de datos",
+      "legend.dataflow.default": "flujo de datos",
+      "legend.lifecycle.start": "estado inicial",
+      "legend.lifecycle.active": "activo",
+      "legend.lifecycle.waiting": "en espera",
+      "legend.lifecycle.decision": "decisión",
+      "legend.lifecycle.success": "éxito",
+      "legend.lifecycle.failure": "fallo / salida",
+      "legend.lifecycle.neutral": "neutral",
+      "legend.lifecycle.external": "externo",
+      "legend.lifecycle.final": "estado final",
+      "viewer.kind.frontend": "Frontend",
+      "viewer.kind.backend": "Backend",
+      "viewer.kind.database": "Base de datos",
+      "viewer.kind.cloud": "Nube",
+      "viewer.kind.security": "Seguridad",
+      "viewer.kind.messagebus": "Bus de mensajes",
+      "viewer.kind.external": "Externo",
+      "viewer.kind.neutral": "Neutral",
+      "viewer.kind.node": "Nodo",
+      "viewer.kind.start": "Inicio",
+      "viewer.kind.active": "Activo",
+      "viewer.kind.waiting": "En espera",
+      "viewer.kind.decision": "Decisión",
+      "viewer.kind.success": "Éxito",
+      "viewer.kind.failure": "Fallo",
+      "viewer.toolbar.actions": "Acciones del diagrama",
+      "viewer.theme.toggle.title": "Cambiar tema (T)",
+      "viewer.theme.toggle": "Cambiar tema de color",
+      "viewer.theme.dark": "Oscuro",
+      "viewer.theme.light": "Claro",
+      "viewer.preset.choose.title": "Elegir estilo visual (S alterna)",
+      "viewer.preset.choose": "Elegir estilo visual",
+      "viewer.preset.style": "Estilo",
+      "viewer.preset.menu": "Estilo visual",
+      "viewer.preset.identity": "Identidad visual",
+      "viewer.preset.cycles": "alterna",
+      "viewer.preset.classic": "Clásico",
+      "viewer.preset.classic.short": "Clásico",
+      "viewer.preset.classic.hint": "Predeterminado técnico estable",
+      "viewer.preset.flow": "Flujo de señal",
+      "viewer.preset.flow.short": "Flujo",
+      "viewer.preset.flow.hint": "Presentación con énfasis en el movimiento",
+      "viewer.preset.blueprint": "Plano",
+      "viewer.preset.blueprint.hint": "Revisión de ingeniería",
+      "viewer.preset.editorial": "Editorial",
+      "viewer.preset.editorial.hint": "Notas de publicación y lanzamiento",
+      "viewer.preset.badge.signalFlow": "FLUJO DE SEÑAL",
+      "viewer.preset.badge.blueprint": "PLANO / REV 01",
+      "viewer.preset.badge.editorial": "EDITORIAL / NOTA DE CAMPO",
+      "viewer.preset.badge.editorialPlate": "ARCHIFY / LÁMINA 04",
+      "viewer.preset.current": "Estilo visual: {style}. Elegir estilo visual",
+      "viewer.motion.live": "Activa",
+      "viewer.motion.still": "Fija",
+      "viewer.motion.pause": "Pausar animación",
+      "viewer.motion.resume": "Reanudar animación",
+      "viewer.motion.reduced": "Animación pausada por la preferencia de movimiento reducido",
+      "viewer.motion.hidden": "Animación pausada mientras esta página está oculta",
+      "viewer.motion.yielding": "Pausar animación; cediendo a {owner}",
+      "viewer.motion.yielding.title": "Vista previa en vivo activada · cediendo a {owner}",
+      "viewer.owner.route": "Sonda de ruta",
+      "viewer.owner.lens": "Lente semántico",
+      "viewer.owner.relationship": "Vista previa de relación",
+      "viewer.owner.intent": "Traza de intención",
+      "viewer.owner.focus": "enfoque semántico",
+      "viewer.owner.legend": "vista previa de la leyenda",
+      "viewer.owner.reader": "interacción del lector",
+      "viewer.present.enter": "Entrar al modo presentación",
+      "viewer.present.enter.title": "Modo presentación (F)",
+      "viewer.present.exit": "Salir del modo presentación",
+      "viewer.present.exit.title": "Salir del modo presentación (F o Escape)",
+      "viewer.present.present": "Presentar",
+      "viewer.present.exit.label": "Salir",
+      "viewer.export.button": "Exportar",
+      "viewer.export.button.title": "Exportar diagrama (E)",
+      "viewer.export.diagram": "Exportar diagrama",
+      "viewer.export.menu": "Exportar",
+      "viewer.export.subtitle": "Salidas portables y limpias",
+      "viewer.export.share": "Compartir",
+      "viewer.export.shareCard": "Tarjeta para compartir",
+      "viewer.export.routeShareCard": "Tarjeta de ruta para compartir",
+      "viewer.export.reachShareCard": "Tarjeta de alcance para compartir",
+      "viewer.export.copyDiagram": "Copiar diagrama",
+      "viewer.export.clipboardPng": "PNG al portapapeles",
+      "viewer.export.raster": "Imágenes rasterizadas",
+      "viewer.export.image": "Imagen",
+      "viewer.export.lossless": "Imagen sin pérdida",
+      "viewer.export.compact": "Imagen compacta",
+      "viewer.export.modern": "Imagen moderna",
+      "viewer.export.vectorMotion": "Vector y movimiento",
+      "viewer.export.vectorMotion.heading": "Vector y movimiento",
+      "viewer.export.editable": "Vector editable",
+      "viewer.export.svg.auto": "SVG · Auto",
+      "viewer.export.svg.auto.hint": "Coincide con el tema del host",
+      "viewer.export.svg.light": "SVG · Claro",
+      "viewer.export.svg.light.hint": "Siempre claro",
+      "viewer.export.svg.dark": "SVG · Oscuro",
+      "viewer.export.svg.dark.hint": "Siempre oscuro",
+      "viewer.export.motion6s": "Movimiento de 6 s",
+      "viewer.export.unsupported": "No compatible con este navegador",
+      "viewer.export.clipboardUnsupported": "Este navegador no admite escribir imágenes en el portapapeles",
+      "viewer.export.clipboardUnsupported.short": "Escritura de imágenes en el portapapeles no admitida en este navegador.",
+      "viewer.export.motionUnavailable": "Captura de movimiento no disponible en este navegador",
+      "viewer.export.webmUnavailable": "WebM no disponible en este navegador",
+      "viewer.export.failed": "Falló la exportación: {message}",
+      "viewer.export.unknownVariant": "Variante de tarjeta para compartir desconocida: {variant}",
+      "viewer.export.routeRequired": "Traza una ruta antes de exportar una tarjeta de ruta para compartir",
+      "viewer.export.reachRequired": "Traza el alcance definido antes de exportar una tarjeta de alcance para compartir",
+      "viewer.export.unknown": "desconocido",
+      "viewer.export.routeFailed": "Falló la exportación de la tarjeta de ruta para compartir: {message}",
+      "viewer.export.reachFailed": "Falló la exportación de la tarjeta de alcance para compartir: {message}",
+      "viewer.export.copyFailed": "Error al copiar: {message}",
+      "viewer.export.copiedPng": "PNG copiado al portapapeles",
+      "viewer.export.downloadedRoute": "Tarjeta de ruta para compartir descargada",
+      "viewer.export.downloadedReach": "Tarjeta de alcance para compartir descargada",
+      "viewer.export.downloadedWebm": "WebM descargado",
+      "viewer.export.recording": "Grabando 6 segundos de movimiento…",
+      "viewer.export.card.routeSummary.one": "Ruta: {source} → {target} · {count} paso",
+      "viewer.export.card.routeSummary.other": "Ruta: {source} → {target} · {count} pasos",
+      "viewer.export.card.reachSummary": "Alcance definido {direction} desde {origin} · {nodes} · {links} · máx {hops}",
+      "viewer.export.card.node.one": "{count} nodo",
+      "viewer.export.card.node.other": "{count} nodos",
+      "viewer.export.card.link.one": "{count} enlace",
+      "viewer.export.card.link.other": "{count} enlaces",
+      "viewer.export.card.hop.one": "{count} salto",
+      "viewer.export.card.hop.other": "{count} saltos",
+      "viewer.export.card.routeBadge": "ARCHIFY · RUTA · {hops}",
+      "viewer.export.card.reachBadge": "ARCHIFY · ALCANCE {direction}",
+      "viewer.export.direction.upstream": "Ascendente",
+      "viewer.export.direction.downstream": "Descendente",
+      "viewer.export.error.canvasUnavailable": "Lienzo no disponible para {label}",
+      "viewer.export.error.contextUnavailable": "Contexto de lienzo 2D no disponible para {label}",
+      "viewer.export.error.toBlobUnavailable": "canvas.toBlob no disponible para {label}",
+      "viewer.export.error.toBlobNull": "canvas.toBlob no devolvió datos para {label}",
+      "viewer.export.error.variantsCombined": "Las variantes de tarjeta para compartir no se pueden combinar",
+      "viewer.export.error.viewerState": "La exportación de la tarjeta para compartir no pudo quitar el estado temporal del visor",
+      "viewer.export.error.routeState": "La exportación de la tarjeta de ruta no pudo preservar la ruta resuelta de forma segura",
+      "viewer.export.error.reachState": "La exportación de la tarjeta de alcance no pudo preservar el alcance definido de forma segura",
+      "viewer.export.error.webmRequirements": "La exportación de movimiento WebM requiere una animación de traza y compatibilidad del navegador con MediaRecorder",
+      "viewer.export.error.mediaRecorder": "MediaRecorder falló",
+      "viewer.export.error.emptyWebm": "MediaRecorder produjo un WebM vacío",
+      "viewer.export.error.webmBackground": "No se pudo cargar el fondo SVG para la exportación WebM",
+      "viewer.guide.title": "Explorar este sistema",
+      "viewer.focus.selectedNodes": "{count} nodos seleccionados",
+      "viewer.guide.eyebrow": "Guía del diagrama",
+      "viewer.guide.close": "Cerrar la guía del diagrama",
+      "viewer.guide.inspecting": "Inspeccionando la semántica compilada",
+      "viewer.guide.actions": "Acciones de exploración del diagrama",
+      "viewer.guide.find": "Buscar cualquier nodo",
+      "viewer.guide.find.hint": "Busca por etiquetas, responsabilidades, tipos e IDs estables.",
+      "viewer.guide.route": "Trazar una ruta",
+      "viewer.guide.route.aria": "Trazar una ruta dirigida",
+      "viewer.guide.route.hint": "Pregunta cómo se conectan dos nodos semánticos en el sentido definido.",
+      "viewer.guide.map": "Ver todo el sistema",
+      "viewer.guide.map.hint": "Abre el Radar semántico con un viewport en vivo y nodos estables.",
+      "viewer.guide.lens": "Comparar tipos semánticos",
+      "viewer.guide.lens.hint": "Cuenta roles, revela su tráfico y compara enlaces directos definidos.",
+      "viewer.guide.present": "Entrar al modo presentación",
+      "viewer.guide.present.hint": "Dale al diagrama en vivo todo el viewport sin cambiar la exportación.",
+      "viewer.guide.shortcuts": "Atajos de teclado adicionales",
+      "viewer.guide.shortcut.export": "Exportar",
+      "viewer.guide.shortcut.theme": "Tema",
+      "viewer.guide.shortcut.style": "Estilo",
+      "viewer.guide.shortcut.reset": "Restablecer",
+      "viewer.guide.shortcut.zoomIn": "Acercar",
+      "viewer.guide.shortcut.zoomOut": "Alejar",
+      "viewer.guide.shortcut.close": "Cerrar",
+      "viewer.guide.facts": "{nodes} · {relationships}",
+      "viewer.guide.fact.node.one": "{count} nodo semántico",
+      "viewer.guide.fact.node.other": "{count} nodos semánticos",
+      "viewer.guide.fact.relationship.one": "{count} relación",
+      "viewer.guide.fact.relationship.other": "{count} relaciones",
+      "viewer.guide.open": "Abrir la guía del diagrama",
+      "viewer.finder.title": "Buscar un nodo",
+      "viewer.finder.close": "Cerrar el buscador de nodos",
+      "viewer.finder.placeholder": "Buscar etiquetas o IDs",
+      "viewer.finder.search": "Buscar nodos del diagrama",
+      "viewer.finder.results": "Nodos del diagrama",
+      "viewer.finder.empty": "No hay nodos coincidentes",
+      "viewer.finder.result.focus": "Enfocar {label}",
+      "viewer.finder.result.routeStart": "Elegir {label} como inicio de la ruta",
+      "viewer.finder.result.routeTarget": "Elegir {label} como destino de la ruta, {links}",
+      "viewer.finder.status.empty": "No hay nodos coincidentes",
+      "viewer.finder.status.count.one": "{count} nodo coincidente",
+      "viewer.finder.status.count.other": "{count} nodos coincidentes",
+      "viewer.finder.noun.nodes": "nodos",
+      "viewer.finder.link.one": "{count} enlace",
+      "viewer.finder.link.other": "{count} enlaces",
+      "viewer.finder.result.focus.one": "Enfocar {label}, {count} conexión relacionada",
+      "viewer.finder.result.focus.other": "Enfocar {label}, {count} conexiones relacionadas",
+      "viewer.finder.status.filtered": "{visible} de {available} {noun}",
+      "viewer.finder.status.all": "{available} {noun}",
+      "viewer.passport.eyebrow": "Pasaporte semántico",
+      "viewer.passport.metadata": "Metadatos del nodo",
+      "viewer.passport.evidence": "Evidencia de fuente verificada",
+      "viewer.passport.verified": "Fuente verificada",
+      "viewer.passport.verificationScope": "Verificado contra el Git local en la revisión fijada. No se ha comprobado el acceso remoto.",
+      "viewer.passport.reach": "Alcance definido",
+      "viewer.passport.reach.trace": "Trazar la alcanzabilidad definida",
+      "viewer.passport.upstream": "Ascendente",
+      "viewer.passport.downstream": "Descendente",
+      "viewer.passport.upstream.trace": "Trazar la alcanzabilidad definida ascendente",
+      "viewer.passport.downstream.trace": "Trazar la alcanzabilidad definida descendente",
+      "viewer.passport.close": "Cerrar el pasaporte semántico",
+      "viewer.passport.move": "Mover el pasaporte semántico. Arrastra, usa las flechas o pulsa Inicio para restablecer.",
+      "viewer.passport.copy": "Copiar enlace",
+      "viewer.passport.copy.focus": "Copiar enlace al nodo enfocado",
+      "viewer.passport.relations": "Relaciones",
+      "viewer.passport.relations.show": "Mostrar relaciones conectadas",
+      "viewer.passport.relations.hide": "Ocultar relaciones conectadas",
+      "viewer.passport.relations.list": "Relaciones conectadas",
+      "viewer.passport.copyRelation": "Copiar relación",
+      "viewer.passport.copyNode": "Copiar nodo",
+      "viewer.passport.copyPinned": "Copiar enlace a la relación fijada",
+      "viewer.passport.copySource": "Copiar enlace al nodo de origen",
+      "viewer.passport.copy.focused.success": "Enlace del nodo enfocado copiado",
+      "viewer.passport.copy.pinned.success": "Enlace de la relación fijada copiado",
+      "viewer.passport.copy.focused.failed": "No se pudo copiar el enlace del nodo enfocado",
+      "viewer.passport.copy.pinned.failed": "No se pudo copiar el enlace de la relación fijada",
+      "viewer.passport.relationship.none": "No hay relaciones conectadas",
+      "viewer.passport.relationship.count.one": "{count} relación",
+      "viewer.passport.relationship.count.other": "{count} relaciones",
+      "viewer.passport.relationship.show.one": "Mostrar {count} relación conectada",
+      "viewer.passport.relationship.show.other": "Mostrar {count} relaciones conectadas",
+      "viewer.passport.relationship.summary": "{out} salientes · {in} entrantes{loops}",
+      "viewer.passport.relationship.loops": " · {count} bucle",
+      "viewer.passport.relationship.explorer": "Explorador de relaciones directas",
+      "viewer.passport.relationship.help": "Usa las flechas para explorar las relaciones. Pulsa Enter o Espacio para fijar detalles; Escape las borra.",
+      "viewer.passport.relationship.loopsBack": "vuelve sobre sí mismo",
+      "viewer.passport.relationship.connectsTo": "conecta a",
+      "viewer.passport.relationship.connectsFrom": "conecta desde",
+      "viewer.passport.relationship.pinned": "Relación fijada · {from} → {to} · {label}",
+      "viewer.passport.relationship.inspect": "Inspeccionar relación {index} de {total}: {from} a {to}, {label}. Pulsa Enter para ver detalles.",
+      "viewer.passport.relationship.group.out": "Salientes",
+      "viewer.passport.relationship.group.in": "Entrantes",
+      "viewer.passport.relationship.group.loop": "Bucles propios",
+      "viewer.passport.relationship.row": "{group}: {relationship}, {neighbor}",
+      "viewer.passport.relationship.direction.out": "SAL →",
+      "viewer.passport.relationship.direction.in": "← ENT",
+      "viewer.passport.relationship.direction.loop": "BUCLE",
+      "viewer.passport.sourceCount.one": "{count} referencia de fuente verificada",
+      "viewer.passport.sourceCount.other": "{count} referencias de fuente verificadas",
+      "viewer.passport.sourceMarker": "SRC",
+      "viewer.passport.beacon.one": "{count} fuente verificada; enfoca este nodo para inspeccionar",
+      "viewer.passport.beacon.other": "{count} fuentes verificadas; enfoca este nodo para inspeccionar",
+      "viewer.passport.repository.open": "Abrir la revisión verificada del repositorio {revision}",
+      "viewer.passport.source.open": "Abrir la fuente verificada {path} en la revisión {revision}",
+      "viewer.passport.source.openLink": "Abrir ↗",
+      "viewer.passport.reach.upstream.one": "Trazar {count} nodo definido ascendente",
+      "viewer.passport.reach.upstream.other": "Trazar {count} nodos definidos ascendentes",
+      "viewer.passport.reach.downstream.one": "Trazar {count} nodo definido descendente",
+      "viewer.passport.reach.downstream.other": "Trazar {count} nodos definidos descendentes",
+      "viewer.passport.reach.noUpstream": "No hay nodos definidos ascendentes",
+      "viewer.passport.reach.noDownstream": "No hay nodos definidos descendentes",
+      "viewer.passport.reach.status": "{direction} · {nodes} nodos · {links} enlaces · máx {hops} saltos",
+      "viewer.route.eyebrow": "Ruta",
+      "viewer.route.start": "Haz clic donde empieza la ruta",
+      "viewer.route.start.find": "Buscar inicio",
+      "viewer.route.start.find.aria": "Buscar un inicio de ruta",
+      "viewer.route.copy": "Copiar enlace",
+      "viewer.route.copy.aria": "Copiar enlace a la ruta trazada",
+      "viewer.route.clear": "Borrar",
+      "viewer.route.clear.aria": "Borrar la sonda de ruta",
+      "viewer.route.traced": "Ruta",
+      "viewer.route.pickTwo": "Haz clic en dos nodos del diagrama",
+      "viewer.route.pickOne": "Haz clic en un nodo del diagrama",
+      "viewer.route.controls": "Controles del recorrido de la ruta",
+      "viewer.route.previous": "Posición anterior de la ruta",
+      "viewer.route.play": "Reproducir el recorrido de la ruta",
+      "viewer.route.pause": "Pausar el recorrido de la ruta",
+      "viewer.route.replay": "Repetir el recorrido de la ruta",
+      "viewer.route.next": "Posición siguiente de la ruta",
+      "viewer.route.journey": "Recorrido",
+      "viewer.route.pause.label": "Pausar",
+      "viewer.route.replay.label": "Repetir",
+      "viewer.route.overview": "Vista general",
+      "viewer.route.overview.aria": "Mostrar la vista general completa de la ruta",
+      "viewer.route.instructions": "Haz clic en un inicio y luego en un final. La ruta sigue las flechas.",
+      "viewer.route.destination": "¿Dónde termina la ruta desde {label}?",
+      "viewer.route.destination.find": "Buscar destino",
+      "viewer.route.destination.find.aria": "Buscar un destino de ruta alcanzable",
+      "viewer.route.differentDestination": "Elige un destino diferente",
+      "viewer.route.distinct": "Elige dos nodos distintos.",
+      "viewer.route.unreachable": "No se llega a {label} desde aquí",
+      "viewer.route.unreachable.detail": "No se llega a {target} desde {source} siguiendo las flechas. Elige un nodo resaltado.",
+      "viewer.route.start.instructions": "Luego elige el final. Solo se iluminan los nodos alcanzables.",
+      "viewer.route.copy.success": "Enlace de la ruta trazada copiado",
+      "viewer.route.copy.failed": "No se pudo copiar el enlace de la ruta trazada",
+      "viewer.route.position": "Posición de la ruta {index} de {total}: {label}",
+      "viewer.route.step": "Paso {index} de {total} · {phase} · {label}",
+      "viewer.route.motionRequired": "El recorrido automático requiere la animación Activa",
+      "viewer.route.trigger.clear": "Borrar la ruta trazada",
+      "viewer.route.overview.status": "{nodes} · {hops} · ruta más corta",
+      "viewer.route.overview.node.one": "{count} nodo",
+      "viewer.route.overview.node.other": "{count} nodos",
+      "viewer.route.overview.hop.one": "{count} paso",
+      "viewer.route.overview.hop.other": "{count} pasos",
+      "viewer.route.phase.playing": "Reproduciendo",
+      "viewer.route.phase.complete": "Completo",
+      "viewer.route.phase.inspecting": "Inspeccionando",
+      "viewer.route.destination.count.one": "{count} nodo alcanzable está resaltado. Haz clic en él.",
+      "viewer.route.destination.count.other": "{count} nodos alcanzables están resaltados. Haz clic en uno.",
+      "viewer.route.noOutgoing": "Ninguna flecha sale de este nodo. Bórralo y elige otro inicio.",
+      "viewer.route.result.title": "{source} a {target}",
+      "viewer.route.finder.source.title": "Elegir el inicio de la ruta",
+      "viewer.route.finder.source.placeholder": "Buscar orígenes de ruta",
+      "viewer.route.finder.source.empty": "No hay orígenes de ruta coincidentes",
+      "viewer.route.finder.source.results": "Nodos que pueden iniciar una ruta",
+      "viewer.route.finder.source.noun": "orígenes de ruta",
+      "viewer.route.finder.source.badge": "inicio",
+      "viewer.route.finder.target.title": "Destino desde {label}",
+      "viewer.route.finder.target.placeholder": "Buscar destinos alcanzables",
+      "viewer.route.finder.target.empty": "No hay destinos alcanzables coincidentes",
+      "viewer.route.finder.target.results": "Destinos de ruta alcanzables",
+      "viewer.route.finder.target.noun": "destinos alcanzables",
+      "viewer.route.hop.one": "{count} salto",
+      "viewer.route.hop.other": "{count} saltos",
+      "viewer.lens.eyebrow": "Lente semántico",
+      "viewer.lens.title": "Comparar roles del sistema",
+      "viewer.lens.close": "Cerrar el lente semántico",
+      "viewer.lens.instruction": "Elige hasta dos tipos semánticos. Uno revela su tráfico real; dos comparan solo las relaciones directas definidas.",
+      "viewer.lens.kinds": "Tipos semánticos",
+      "viewer.lens.choose": "Elige un tipo para inspeccionar sus nodos y las relaciones que lo tocan.",
+      "viewer.lens.copy": "Copiar enlace al lente semántico",
+      "viewer.lens.clear": "Borrar el lente semántico",
+      "viewer.lens.open": "Abrir el lente semántico",
+      "viewer.lens.openActive": "Abrir el lente semántico activo",
+      "viewer.lens.legend": "Leyenda semántica",
+      "viewer.lens.legend.inspect.one": "Inspeccionar {label}, {count} nodo",
+      "viewer.lens.legend.inspect.other": "Inspeccionar {label}, {count} nodos",
+      "viewer.lens.kind.count.one": "{label}, {count} nodo",
+      "viewer.lens.kind.count.other": "{label}, {count} nodos",
+      "viewer.lens.compare.one": "{first} → {second}: {forward} · {second} → {first}: {reverse} · {count} relación directa",
+      "viewer.lens.compare.other": "{first} → {second}: {forward} · {second} → {first}: {reverse} · {count} relaciones directas",
+      "viewer.lens.single": "{nodes} · {relationships} · los pares conectados permanecen visibles",
+      "viewer.lens.node.one": "{count} nodo {label}",
+      "viewer.lens.node.other": "{count} nodos {label}",
+      "viewer.lens.relationship.one": "{count} relación en contacto",
+      "viewer.lens.relationship.other": "{count} relaciones en contacto",
+      "viewer.radar.title": "Radar semántico",
+      "viewer.radar.building": "Construyendo la vista general",
+      "viewer.radar.openFull": "Abrir el radar semántico completo",
+      "viewer.radar.open": "Abrir el radar",
+      "viewer.radar.close": "Cerrar el radar semántico",
+      "viewer.radar.surface": "Vista general del diagrama. Haz clic en un nodo para enfocarlo, o usa las flechas para desplazarte.",
+      "viewer.radar.click": "Clic en el nodo",
+      "viewer.radar.drag": "Arrastra para desplazar",
+      "viewer.radar.space": "El radar semántico necesita más espacio de MAPA.",
+      "viewer.radar.nodes": "Nodos del radar del diagrama semántico",
+      "viewer.radar.focus": "Enfocar {label} desde el Radar semántico",
+      "viewer.radar.status": "{count} nodos · {viewport}",
+      "viewer.radar.fullMap": "{count} nodos · mapa completo",
+      "viewer.radar.compacted": "Radar compactado para no tapar el Pasaporte semántico ni los controles de MAPA.",
+      "viewer.radar.cancelWaiting": "Cancelar la espera del radar semántico por más espacio de MAPA",
+      "viewer.radar.needsSpace": "El radar semántico necesita más espacio de MAPA visible",
+      "viewer.radar.viewport.full": "mapa completo",
+      "viewer.radar.viewport.width": "{percent}% de ancho",
+      "viewer.radar.viewport.scale": "{percent}% del viewport",
+      "viewer.nav.controls": "Controles de vista del diagrama",
+      "viewer.nav.route": "Trazar una ruta dirigida",
+      "viewer.nav.route.title": "Trazar ruta (R)",
+      "viewer.nav.route.short": "RUTA",
+      "viewer.nav.radar": "Abrir el radar semántico",
+      "viewer.nav.radar.title": "Radar semántico (M)",
+      "viewer.nav.radar.short": "MAPA",
+      "viewer.nav.lens": "Abrir el lente semántico",
+      "viewer.nav.lens.title": "Lente semántico (L)",
+      "viewer.nav.lens.short": "LENTE",
+      "viewer.nav.find": "Buscar un nodo",
+      "viewer.nav.find.title": "Buscar un nodo (/)",
+      "viewer.outline.title": "Índice de nodos",
+      "viewer.rail.show": "Notas e índice",
+      "viewer.rail.controls": "Panel lateral",
+      "viewer.rail.collapse": "Contraer panel lateral",
+      "viewer.rail.bottom": "Mover el panel debajo",
+      "viewer.rail.right": "Mover el panel al lado",
+      "viewer.nav.guide": "Abrir la guía del diagrama",
+      "viewer.nav.guide.title": "Guía del diagrama (?)",
+      "viewer.nav.zoomOut": "Alejar",
+      "viewer.nav.zoomOut.title": "Alejar (-)",
+      "viewer.nav.reset": "Restablecer la vista del diagrama",
+      "viewer.nav.reset.title": "Restablecer vista (0)",
+      "viewer.nav.read": "LEER",
+      "viewer.nav.zoomIn": "Acercar",
+      "viewer.nav.zoomIn.title": "Acercar (+)",
+      "viewer.nav.camera": "{hint}. Restablecer la vista del diagrama",
+      "viewer.nav.camera.title": "{semantic}{hint} · restablecer vista (0)",
+      "viewer.nav.camera.semantic": "Cámara semántica activa · ",
+      "viewer.nav.level.map": "MAPA",
+      "viewer.nav.level.read": "LEER",
+      "viewer.nav.level.full": "COMPLETO",
+      "viewer.nav.level.auto": "AUTO",
+      "viewer.nav.detail.map": "Acerca para revelar las etiquetas de relación y el contexto de los nodos",
+      "viewer.nav.detail.read": "Acerca de nuevo para revelar etiquetas y anotaciones",
+      "viewer.nav.detail.full": "Detalle completo del diagrama",
+      "viewer.intent.summary": "{label}. {out} salientes, {in} entrantes{loops}. {total} conexiones. Pulsa Enter para ver detalles.",
+      "viewer.intent.loops": ", {count} bucle propio",
+      "viewer.common.copied": "Copiado",
+      "viewer.common.copyFailed": "Error al copiar",
+      "viewer.common.copyLink": "Copiar enlace",
+      "viewer.common.clear": "Borrar",
+      "viewer.common.close": "Cerrar"
+    },
+    "repository": {
+      "url": "https://github.com/TU-USUARIO-GITHUB/ezarr-stack",
+      "provider": "github",
+      "link_mode": "local-only"
+    }
+  },
+  "components": [
+    {
+      "id": "usuarios",
+      "type": "external",
+      "label": "Usuarios",
+      "sublabel": "navegador, TV y móvil",
+      "pos": [
+        40,
+        70
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "RUNBOOK.md",
+          "line": 20,
+          "label": "interfaz de acceso"
+        }
+      ]
+    },
+    {
+      "id": "cloudflare",
+      "type": "cloud",
+      "label": "Cloudflare Edge",
+      "sublabel": "TLS y DNS *.example.com",
+      "tag": "0 puertos abiertos",
+      "pos": [
+        40,
+        194
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/etc/cloudflared/config.yml",
+          "line": 5,
+          "label": "ingress público"
+        }
+      ]
+    },
+    {
+      "id": "tailscale",
+      "type": "cloud",
+      "label": "Tailscale",
+      "sublabel": "mesh privado",
+      "pos": [
+        40,
+        318
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "RUNBOOK.md",
+          "line": 35,
+          "label": "patrón conocido"
+        }
+      ]
+    },
+    {
+      "id": "drive",
+      "type": "cloud",
+      "label": "Google Drive",
+      "sublabel": "gdrive:Media",
+      "pos": [
+        1140,
+        566
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/mount-gdrive.sh",
+          "line": 30,
+          "label": "remoto rclone"
+        }
+      ]
+    },
+    {
+      "id": "alertas",
+      "type": "external",
+      "label": "ntfy + Healthchecks.io",
+      "sublabel": "avisos y latidos",
+      "pos": [
+        1140,
+        690
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "RUNBOOK.md",
+          "line": 14,
+          "label": "capa de alertas"
+        }
+      ]
+    },
+    {
+      "id": "cloudflared",
+      "type": "backend",
+      "label": "cloudflared",
+      "sublabel": "túnel QUIC ×2",
+      "tag": "token en archivo",
+      "pos": [
+        315,
+        70
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/start-tunnel.sh",
+          "line": 6,
+          "label": "dos réplicas"
+        },
+        {
+          "path": "configs/usr/local/bin/start-tunnel.sh",
+          "line": 41,
+          "label": "protocolo quic"
+        }
+      ]
+    },
+    {
+      "id": "tailscaled",
+      "type": "backend",
+      "label": "tailscaled",
+      "sublabel": "anuncia 192.168.1.0/24",
+      "tag": "--accept-dns=false",
+      "pos": [
+        315,
+        318
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/arr-stack",
+          "line": 195,
+          "label": "arranque a mano"
+        },
+        {
+          "path": "RUNBOOK.md",
+          "line": 41,
+          "label": "sin systemd"
+        }
+      ]
+    },
+    {
+      "id": "nginx",
+      "type": "backend",
+      "label": "nginx",
+      "sublabel": "proxy :80 y :443",
+      "pos": [
+        315,
+        194
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/etc/nginx/sites-enabled/ezarr.conf",
+          "line": 2,
+          "label": "vhosts"
+        }
+      ]
+    },
+    {
+      "id": "arr_stack",
+      "type": "backend",
+      "label": "arr-stack",
+      "sublabel": "lanza y revive",
+      "tag": "case + pgrep",
+      "pos": [
+        315,
+        442
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/arr-stack",
+          "line": 8,
+          "label": "orden de arranque"
+        },
+        {
+          "path": "configs/usr/local/bin/arr-stack",
+          "line": 29,
+          "label": "case idempotente"
+        }
+      ]
+    },
+    {
+      "id": "homarr",
+      "type": "frontend",
+      "label": "Homarr",
+      "sublabel": "panel :7575",
+      "pos": [
+        590,
+        70
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/arr-stack",
+          "line": 155,
+          "label": "panel web"
+        }
+      ]
+    },
+    {
+      "id": "jellyfin",
+      "type": "backend",
+      "label": "Jellyfin",
+      "sublabel": "vídeo :8096",
+      "pos": [
+        590,
+        194
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/arr-stack",
+          "line": 119,
+          "label": "reproductor"
+        }
+      ]
+    },
+    {
+      "id": "arr",
+      "type": "backend",
+      "label": "Motor *arr",
+      "sublabel": "Prowlarr·Sonarr·Radarr·Bazarr",
+      "tag": ":9696 :8989 :7878 :6767",
+      "pos": [
+        590,
+        318
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/arr-stack",
+          "line": 127,
+          "label": "prowlarr"
+        },
+        {
+          "path": "configs/usr/local/bin/arr-stack",
+          "line": 141,
+          "label": "sonarr"
+        },
+        {
+          "path": "configs/usr/local/bin/arr-stack",
+          "line": 148,
+          "label": "bazarr"
+        }
+      ]
+    },
+    {
+      "id": "qbittorrent",
+      "type": "backend",
+      "label": "qBittorrent",
+      "sublabel": "descargas :8081",
+      "tag": "403 al túnel",
+      "pos": [
+        590,
+        442
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/root/.config/qBittorrent/qBittorrent.conf",
+          "line": 57,
+          "label": "puerto real"
+        },
+        {
+          "path": "configs/etc/nginx/sites-enabled/ezarr.conf",
+          "line": 164,
+          "label": "compuerta 403"
+        }
+      ]
+    },
+    {
+      "id": "motion",
+      "type": "backend",
+      "label": "motion",
+      "sublabel": "cámara IP, clips",
+      "pos": [
+        590,
+        566
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "RUNBOOK.md",
+          "line": 53,
+          "label": "grabación 24/7"
+        }
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "caché :6379",
+      "pos": [
+        865,
+        70
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/arr-stack",
+          "line": 163,
+          "label": "backend de Homarr"
+        }
+      ]
+    },
+    {
+      "id": "flaresolverr",
+      "type": "backend",
+      "label": "FlareSolverr",
+      "sublabel": "anti-bot :8191",
+      "tag": "403 al túnel",
+      "pos": [
+        865,
+        194
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/arr-stack",
+          "line": 185,
+          "label": "arranque"
+        },
+        {
+          "path": "configs/etc/nginx/sites-enabled/ezarr.conf",
+          "line": 146,
+          "label": "solo local"
+        }
+      ]
+    },
+    {
+      "id": "mergerfs",
+      "type": "database",
+      "label": "mergerfs",
+      "sublabel": "unión /data/media",
+      "pos": [
+        865,
+        442
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/mount-gdrive.sh",
+          "line": 62,
+          "label": "opciones de unión"
+        }
+      ]
+    },
+    {
+      "id": "local_fs",
+      "type": "database",
+      "label": "/data/local",
+      "sublabel": "ext4 del móvil",
+      "pos": [
+        865,
+        318
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/mount-gdrive.sh",
+          "line": 9,
+          "label": "árbol local"
+        },
+        {
+          "path": "RUNBOOK.md",
+          "line": 15,
+          "label": "destino de backups"
+        }
+      ]
+    },
+    {
+      "id": "rclone",
+      "type": "backend",
+      "label": "rclone mount",
+      "sublabel": "gdrive:Media → /data/remote",
+      "tag": "caché VFS 40G",
+      "pos": [
+        865,
+        566
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/mount-gdrive.sh",
+          "line": 30,
+          "label": "montaje FUSE"
+        }
+      ]
+    },
+    {
+      "id": "stack_wd",
+      "type": "backend",
+      "label": "stack-watchdog",
+      "sublabel": "cron de 1 min",
+      "tag": "montajes y puertos",
+      "pos": [
+        865,
+        690
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/stack-watchdog.sh",
+          "line": 2,
+          "label": "ciclo y motivo"
+        },
+        {
+          "path": "RUNBOOK.md",
+          "line": 13,
+          "label": "tabla de vigilantes"
+        }
+      ]
+    },
+    {
+      "id": "resilience",
+      "type": "backend",
+      "label": "resilience-watchdog",
+      "sublabel": "bucle de 5 s",
+      "tag": "remonta /data/media",
+      "pos": [
+        590,
+        690
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/resilience-watchdog.sh",
+          "line": 5,
+          "label": "ciclo de 5 s"
+        }
+      ]
+    },
+    {
+      "id": "freeze_guard",
+      "type": "security",
+      "label": "freeze-guard",
+      "sublabel": "kill -9 al más pesado",
+      "tag": "load≥150, RAM<500MB",
+      "pos": [
+        315,
+        690
+      ],
+      "size": [
+        150,
+        54
+      ],
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/freeze-guard.sh",
+          "line": 3,
+          "label": "umbral y último recurso"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Host — Poco X3 Pro en TWRP/recovery, sin Android ni systemd",
+      "wraps": [
+        "cloudflared",
+        "nginx",
+        "tailscaled",
+        "arr_stack",
+        "freeze_guard",
+        "homarr",
+        "jellyfin",
+        "arr",
+        "qbittorrent",
+        "motion",
+        "resilience",
+        "redis",
+        "flaresolverr",
+        "local_fs",
+        "mergerfs",
+        "rclone",
+        "stack_wd"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Chroot Ubuntu en /data/linux — arr-stack y cron sustituyen a systemd",
+      "wraps": [
+        "cloudflared",
+        "tailscaled",
+        "nginx",
+        "arr_stack",
+        "homarr",
+        "jellyfin",
+        "arr",
+        "qbittorrent",
+        "motion",
+        "redis",
+        "flaresolverr"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "local + /data/remote → /data/media",
+      "wraps": [
+        "local_fs",
+        "mergerfs",
+        "rclone"
+      ],
+      "pad": 16
+    }
+  ],
+  "connections": [
+    {
+      "id": "user-to-cf",
+      "from": "usuarios",
+      "to": "cloudflare",
+      "label": ":443",
+      "variant": "emphasis"
+    },
+    {
+      "id": "user-to-ts",
+      "from": "usuarios",
+      "to": "tailscale",
+      "label": "cola en móvil y PC"
+    },
+    {
+      "id": "cf-to-tunnel",
+      "from": "cloudflare",
+      "to": "cloudflared",
+      "label": "QUIC saliente",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ts-to-daemon",
+      "from": "tailscale",
+      "to": "tailscaled",
+      "label": "WireGuard"
+    },
+    {
+      "id": "tunnel-to-nginx",
+      "from": "cloudflared",
+      "to": "nginx",
+      "label": "example.com → :80"
+    },
+    {
+      "id": "tunnel-direct",
+      "from": "cloudflared",
+      "to": "jellyfin",
+      "label": "a su propio puerto",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ts-to-nginx",
+      "from": "tailscaled",
+      "to": "nginx",
+      "label": "LAN y tailnet",
+      "labelDx": -62
+    },
+    {
+      "id": "nginx-homarr",
+      "from": "nginx",
+      "to": "homarr",
+      "label": ":7575"
+    },
+    {
+      "id": "nginx-jellyfin",
+      "from": "nginx",
+      "to": "jellyfin",
+      "label": ":8096"
+    },
+    {
+      "id": "nginx-arr",
+      "from": "nginx",
+      "to": "arr",
+      "label": "los cuatro *arr"
+    },
+    {
+      "id": "nginx-qbit",
+      "from": "nginx",
+      "to": "qbittorrent",
+      "label": ":8081, 403 al túnel",
+      "variant": "security"
+    },
+    {
+      "id": "homarr-redis",
+      "from": "homarr",
+      "to": "redis",
+      "label": "sesiones :6379"
+    },
+    {
+      "id": "arr-flaresolverr",
+      "from": "arr",
+      "to": "flaresolverr",
+      "label": "anti-bot"
+    },
+    {
+      "id": "arr-qbit",
+      "from": "arr",
+      "to": "qbittorrent",
+      "label": "pide la descarga"
+    },
+    {
+      "id": "qbit-mergerfs",
+      "from": "qbittorrent",
+      "to": "mergerfs",
+      "label": "a /data/media"
+    },
+    {
+      "id": "motion-mergerfs",
+      "from": "motion",
+      "to": "mergerfs",
+      "label": "clips de cámara"
+    },
+    {
+      "id": "local-mergerfs",
+      "from": "local_fs",
+      "to": "mergerfs",
+      "label": "del móvil"
+    },
+    {
+      "id": "rclone-mergerfs",
+      "from": "rclone",
+      "to": "mergerfs",
+      "label": "/data/remote"
+    },
+    {
+      "id": "rclone-drive",
+      "from": "rclone",
+      "to": "drive",
+      "label": "FUSE ↔ Drive"
+    },
+    {
+      "id": "arrstack-arr",
+      "from": "arr_stack",
+      "to": "arr",
+      "label": "lanza y revive"
+    },
+    {
+      "id": "resilience-arrstack",
+      "from": "resilience",
+      "to": "arr_stack",
+      "label": "cada 30 s",
+      "variant": "emphasis"
+    },
+    {
+      "id": "freeze-resilience",
+      "from": "freeze_guard",
+      "to": "resilience",
+      "label": "lo revive ≤30 s"
+    },
+    {
+      "id": "stackwd-alertas",
+      "from": "stack_wd",
+      "to": "alertas",
+      "label": "notifica"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "No hay systemd: así arranca todo",
+      "items": [
+        "arr-stack es el arranque: un case por servicio y un pgrep que decide si está vivo (arr-stack:8, arr-stack:29).",
+        "Es idempotente, así que los vigilantes pueden llamarlo cada 30 s sin reiniciar lo que ya funciona.",
+        "cron sustituye a los timers: backup 04:00, reinicio diario de Jellyfin 06:30, limpieza de cámara 03:45 (etc/cron.d)."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Por dónde sale el chroot a internet",
+      "items": [
+        "Si aparece una interfaz eth o wlan, pide IP por DHCP; si el DHCP falla, cae a la estática 192.168.1.10 vía 192.168.1.1 (arr-stack:35-51).",
+        "Sin red nativa, se levanta un túnel USB: gost como socks5 en 127.0.0.1:1080 y tun2socks sobre tun0, con la ruta por defecto apuntando ahí (arr-stack:61-72).",
+        "El RTC no persiste en el kernel de TWRP, así que cada cambio de modo pasa por sync-clock.sh (arr-stack:76)."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Límites honestos de este stack",
+      "items": [
+        "La WebUI de qBittorrent no es pública: el ingress del túnel apunta a :8080 y nginx devuelve 403 al tráfico que trae X-Forwarded-For, remitiendo a la LAN en :8081 (ezarr.conf:164).",
+        "FlareSolverr se cierra igual: su vhost devuelve 403 al túnel y sólo se usa desde el chroot (ezarr.conf:146).",
+        "Si desinstalas un servicio, acuérdate de cerrar también su vhost en nginx y su ingress en Cloudflare: la ruta sigue publicada aunque nadie escuche, y es una puerta abierta que nadie ve. Revisa `nginx -T` y el config.yml del túnel tras cada baja."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "El riesgo de la unión con Drive",
+      "items": [
+        "mergerfs funde /data/local (ext4 del móvil) y /data/remote (rclone de gdrive:Media) en un único /data/media con category.create=ff (mount-gdrive.sh:62).",
+        "Los servicios no distinguen qué capa hay debajo: si Drive se cae, el escaneo de Jellyfin ve la mitad de la biblioteca."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Copias de seguridad",
+      "items": [
+        "Cada 04:00, las bases de datos de los *arr a /data/local/Backups/ARR, 14 días con integrity_check (RUNBOOK.md:15).",
+        "Los domingos: copia cifrada a gdrive-crypt:ARR a las 05:30 y snapshot del chroot a gdrive-crypt:CHROOT a las 02:00 (etc/cron.d/arr-offsite, arr-chroot).",
+        "Los vigilantes se enteran de los fallos por ntfy y por Healthchecks.io, no por los logs (stack-watchdog.sh:16, RUNBOOK.md:14)."
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "La cámara",
+      "items": [
+        "motion decodifica el RTSP 24/7 y graba un clip mp4 por evento en /data/media/Camera (RUNBOOK.md:53).",
+        "cam-upload.sh sube cada clip al cerrarse y nada se sube mientras Jellyfin reproduce; en Drive se guarda un mes (RUNBOOK.md:59-65).",
+        "El watchdog inyecta MagicDNS de Tailscale en /etc/resolv.conf, por eso tailscaled debe llevar --accept-dns=false (RUNBOOK.md:40)."
+      ]
+    }
+  ]
+}

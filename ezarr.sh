@@ -242,7 +242,10 @@ main() {
     log_step "entorno"
     ezarr_env_summary
 
-    # Los pasos se registran con su par plan_/apply_.
+    # Los pasos se registran con su par plan_/apply_. El DNS va primero porque
+    # es lo que usan todos los demas: sin resolver nombres no hay descargas, ni
+    # certificados, ni comprobaciones de red.
+    ezarr_step_add "resolucion de nombres"            plan_resolv       apply_resolv
     ezarr_step_add "verificar requisitos"           plan_requisitos   apply_requisitos
     ezarr_step_add "estructura de directorios"      plan_directorios  apply_directorios
     ezarr_step_add "escribir configuracion"         plan_configuracion apply_configuracion

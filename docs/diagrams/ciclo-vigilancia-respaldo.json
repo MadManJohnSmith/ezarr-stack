@@ -1,0 +1,276 @@
+{
+  "schema_version": 2,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Ciclo de vigilancia y respaldo",
+    "output": "docs/diagrams/ciclo-vigilancia-respaldo.html",
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/TU-USUARIO-GITHUB/ezarr-stack",
+      "provider": "github",
+      "link_mode": "local-only"
+    }
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Vigilancia y respaldo"
+    },
+    {
+      "id": "rescue",
+      "label": "Rescate (5 s)"
+    },
+    {
+      "id": "guard",
+      "label": "Guardas (1 min)"
+    },
+    {
+      "id": "net",
+      "label": "Drive"
+    }
+  ],
+  "states": [
+    {
+      "id": "boot",
+      "type": "start",
+      "label": "Arranque",
+      "sublabel": "chroot vivo, aún sin vigilancia",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "arranque"
+    },
+    {
+      "id": "vigila",
+      "type": "active",
+      "label": "Vigilando",
+      "sublabel": "resilience 5 s + stack 1 min",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "ciclo"
+    },
+    {
+      "id": "respalda",
+      "type": "active",
+      "label": "Respaldando",
+      "sublabel": "DB 04:00 · chroot domingo 02:00",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "cron"
+    },
+    {
+      "id": "ok",
+      "type": "success",
+      "label": "Todo OK",
+      "sublabel": "estado=OK + ping a Healthchecks",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "estable"
+    },
+    {
+      "id": "revive",
+      "type": "active",
+      "label": "Revive lo muerto",
+      "sublabel": "arr-stack start idempotente",
+      "lane": "rescue",
+      "col": 1,
+      "tag": "≤30 s"
+    },
+    {
+      "id": "corta",
+      "type": "active",
+      "label": "Mata al más pesado",
+      "sublabel": "load≥150 + RAM<500MB",
+      "lane": "rescue",
+      "col": 2,
+      "tag": "último recurso",
+      "width": 172
+    },
+    {
+      "id": "pausa",
+      "type": "waiting",
+      "label": "Pausa descargas",
+      "sublabel": "modo cine · disco >85 %",
+      "lane": "guard",
+      "col": 1,
+      "tag": "guarda"
+    },
+    {
+      "id": "temp",
+      "type": "decision",
+      "label": "Temp alta",
+      "sublabel": "promedio, no máximo",
+      "lane": "guard",
+      "col": 2,
+      "tag": "decisión",
+      "width": 172
+    },
+    {
+      "id": "alerta",
+      "type": "waiting",
+      "label": "Alerta al humano",
+      "sublabel": "ntfy + Healthchecks /fail",
+      "lane": "guard",
+      "col": 3,
+      "tag": "avisa"
+    },
+    {
+      "id": "offsite",
+      "type": "success",
+      "label": "Copia cifrada en Drive",
+      "sublabel": "snapshot semanal, 14 días",
+      "lane": "net",
+      "col": 2,
+      "tag": "fuera de casa"
+    },
+    {
+      "id": "caido",
+      "type": "failure",
+      "label": "Caída total",
+      "sublabel": "sin corriente no hay ciclo",
+      "lane": "net",
+      "col": 3,
+      "tag": "límite",
+      "width": 172
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t01",
+      "from": "boot",
+      "to": "vigila",
+      "label": "watchdogs vivos"
+    },
+    {
+      "id": "t02",
+      "from": "vigila",
+      "to": "respalda",
+      "label": "llega la hora del cron"
+    },
+    {
+      "id": "t03",
+      "from": "respalda",
+      "to": "ok",
+      "label": "copia verificada (integrity_check)"
+    },
+    {
+      "id": "t04",
+      "from": "ok",
+      "to": "vigila",
+      "variant": "emphasis",
+      "label": "sigue el ciclo"
+    },
+    {
+      "id": "t05",
+      "from": "vigila",
+      "to": "revive",
+      "variant": "security",
+      "label": "muere"
+    },
+    {
+      "id": "t06",
+      "from": "revive",
+      "to": "vigila",
+      "variant": "emphasis",
+      "label": "vuelve"
+    },
+    {
+      "id": "t07",
+      "from": "revive",
+      "to": "corta",
+      "variant": "security",
+      "label": "RAM agotada"
+    },
+    {
+      "id": "t08",
+      "from": "corta",
+      "to": "revive",
+      "variant": "emphasis",
+      "label": "lo revive"
+    },
+    {
+      "id": "t09",
+      "from": "vigila",
+      "to": "pausa",
+      "variant": "security",
+      "label": "reproduciendo"
+    },
+    {
+      "id": "t10",
+      "from": "pausa",
+      "to": "vigila",
+      "variant": "emphasis",
+      "label": "cine terminó"
+    },
+    {
+      "id": "t11",
+      "from": "vigila",
+      "to": "temp",
+      "label": "temp >70 °C"
+    },
+    {
+      "id": "t12",
+      "from": "temp",
+      "to": "alerta",
+      "variant": "security",
+      "label": "avisa por promedio"
+    },
+    {
+      "id": "t13",
+      "from": "alerta",
+      "to": "vigila",
+      "variant": "dashed",
+      "label": "se estabiliza"
+    },
+    {
+      "id": "t14",
+      "from": "respalda",
+      "to": "offsite",
+      "variant": "security",
+      "label": "domingo → Drive cifrado"
+    },
+    {
+      "id": "t15",
+      "from": "ok",
+      "to": "caido",
+      "variant": "dashed",
+      "label": "corte eléctrico"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Los cuatro vigilantes, cada uno con su reloj",
+      "items": [
+        "resilience-watchdog · bucle de 5 s: detecta Ethernet/DHCP, modo de red (nativo o puente USB), reloj, montajes rclone+mergerfs y servicios; arr-stack start es idempotente y revive lo muerto en ~30 s.",
+        "stack-watchdog · cron cada 1 min con flock: vigila el stack y AVISA (no tumba nada). Si Drive cae o se satura, cancela los escaneos de Jellyfin para que no borre la biblioteca.",
+        "freeze-guard · bucle de 30 s: si la RAM se agota (load>=150 y MemAvailable<500 MB durante 2 min), mata con kill -9 al proceso con más RSS. Solo lee /proc y /sys: no toca el disco. Lo arranca el propio resilience-watchdog si no está corriendo.",
+        "Respaldos: bases de datos cada día a las 04:00 (SQLite .backup + integrity_check) y copia cifrada del chroot cada domingo a las 02:00."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Decisiones que salieron de incidentes reales",
+      "items": [
+        "La temperatura se avisa por el PROMEDIO de las zonas cpu-*, no por el máximo: este SoC tiene ~25 zonas y un sensor outlier interno disparaba el máximo con la carcasa fría (falsos positivos constantes).",
+        "Modo cine: si Jellyfin está reproduciendo, qBittorrent pausa las descargas y las reanuda 5 min después de que acabe y el disco esté bajo 85 %.",
+        "Disco: >75 % solo avisa; >85 % con descargas activas pausa los torrents para que no llenen el disco.",
+        "qBittorrent con descargas activas a 0 KB/s durante 30 min seguidos se reinicia (el announce de libtorrent se degradó); los fastresume lo retoman."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Límites honestos de este nivel 1",
+      "items": [
+        "Ningún watchdog sobrevive a un corte eléctrico o a un fallo de placa: sin corriente no corre el bucle de 5 s. Por eso la copia semanal en Drive es la pieza que de verdad separa nivel 1 de nivel 0.",
+        "freeze-guard · bucle de 30 s: si la RAM se agota (load>=150 y MemAvailable<500 MB durante 2 min), mata con kill -9 al proceso con más RSS. Solo lee /proc y /sys: no toca el disco. Lo arranca el propio resilience-watchdog si no está corriendo.",
+        "Los respaldos se verifican antes de darse por buenos (PRAGMA integrity_check): una corrupción no debe copiarse 14 días seguidos.",
+        "Es un servidor casero con superpoderes, no un datacenter: si Drive está saturado o sin red, el sistema sigue local pero avisa en vez de esconderse."
+      ]
+    }
+  ]
+}

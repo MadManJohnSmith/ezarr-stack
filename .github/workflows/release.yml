@@ -1,0 +1,191 @@
+name: Release
+
+# Al crear un tag v* publica un release con la linea de instalacion y los
+# enlaces.
+#
+# QUE NO HACE ESTE WORKFLOW, y por que importa mas de lo que parece:
+#
+# No publica un instalador de una linea. No hay `curl | bash`, ni binario
+# adjunto, ni contenedor. README.md:125-126 dice exactamente eso ("No hay
+# instalador remoto. No hay `curl | bash`, ni release, ni contenedor: este
+# repositorio todavia no tiene remoto Git, asi que la instalacion es clonar y
+# ejecutar"), y las notas de este release repiten la instalacion que el README
+# documenta: clonar y ejecutar. Si algum dia se anade un `curl | bash` de
+# verdad, es otro workflow y otro fichero, no una linea cambiada aqui.
+#
+# Y las notas llevan el aviso de que `--profile minimal` no es una comodidad
+# temporal: hoy es la unica forma de instalar algo (README.md:114-117), porque
+# el perfil `standard` sale 6 y las descargas apuntan a un dominio que no
+# resuelve. Publicar un release que solo dijera "instala con una linea" seria
+# exactamente el fallo que el resto del repo no deja pasar.
+#
+# NOTA: hoy este repositorio no tiene remoto Git (`git remote -v` vacio), asi
+# que este workflow no se puede ejecutar hasta que se cree el repo en GitHub y
+# se suba el arbol. Se ha escrito contra `gh release create`, que ya viene en
+# la imagen de ubuntu-latest, para no depender de una action de terceros.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: publicar el release de ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # El CHANGELOG se lee entero para sacar la seccion de la version, y
+          # `--notes-start-tag` compara contra el tag anterior, que no esta en
+          # un clon de profundidad 1.
+          fetch-depth: 0
+
+      - name: Sacar la version del tag
+        id: ver
+        # `shell: bash` explicito: el paso usa BASH_REMATCH, que existe en bash
+        # y no en otros shell. El default de GitHub en Linux ya es bash, pero
+        # dejarlo escrito evita que un cambio de shell lo rompa en silencio.
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if ! [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::El tag '$tag' no es v<MAJOR>.<MINOR>.<PATCH>. Sin tres" \
+                 "numeros no se puede comparar con el CHANGELOG ni decidir si es" \
+                 "un release o una beta."
+            exit 1
+          fi
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          echo "Tag $tag -> version ${BASH_REMATCH[1]}"
+
+      - name: Avisar si el CHANGELOG no menciona la version
+        # Aviso, no fallo. Bloquear el release por esto dejaria el repo sin
+        # release, que es peor que un release con el CHANGELOG sin actualizar.
+        # Se deja escrito en el resumen para que se vea en la pestana del run.
+        id: changelog
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          version="$VERSION"
+          section=$(awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" {found=1; next}
+            found && /^## \[/ {exit}
+            found {print}
+          ' CHANGELOG.md)
+          if [ -z "${section//[[:space:]]/}" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::CHANGELOG.md no tiene una seccion '## [$version]'." \
+                 "El release se publica igual, pero el changelog queda desfasado."
+            echo "AVISO: CHANGELOG.md sin seccion para $version" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "CHANGELOG de la $version:"
+              echo '```'
+              echo "$section" | head -40
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Escribir las notas
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version="$VERSION"
+          repo_url="https://github.com/$REPO"
+          name="${repo_url##*/}"
+
+          # La linea de instalacion sale del README, no de la imaginacion.
+          # `git clone` + los dos comandos de README.md:88-94, en el mismo
+          # orden y con el mismo perfil, incluido el `sudo` del paso 2.
+          install_block="git clone ${repo_url}.git
+          cd ${name}
+          ./ezarr.sh --dry-run --profile minimal
+          sudo ./ezarr.sh --yes --profile minimal"
+
+          {
+            echo "## ezarr-stack ${version}"
+            echo
+            echo "Instalador (\`ezarr.sh\`), plano de control (\`ezarrctl\`) y gestor de"
+            echo "servicios (\`arr-stack\`) para un stack *arr en un telefono Android con TWRP."
+            echo
+            echo '### Instalar'
+            echo
+            echo '```bash'
+            echo "$install_block"
+            echo '```'
+            echo
+            echo "El paso 1 imprime el plan completo y no escribe nada. El paso 2 instala."
+            echo "El instalador **no arranca el stack**: eso lo decides tu despues con"
+            echo '`ezarrctl start`.'
+            echo
+            echo '### Antes de instalar, dos avisos que el release no va a suavizar'
+            echo
+            echo '1. **`--profile minimal` no es una comodidad temporal.** El perfil por'
+            echo '   defecto es `standard`, y `standard` **sale con codigo 6**: faltan los'
+            echo '   sha256 de arr/subs/downloads. `minimal` (core + media) es hoy la unica'
+            echo '   forma de instalar algo. Los `.deb` se bajarian de'
+            echo '   `https://packages.example.com`, un dominio que no resuelve, asi que'
+            echo '   poner los sha256 tampoco lo arregla.'
+            echo '2. **Desbloquear el bootloader de un Xiaomi formatea `/data`.** Fotos,'
+            echo '   contactos, WhatsApp y claves. Esta en'
+            echo "   [\`docs/recovery.md\`](${repo_url}/blob/v${version}/docs/recovery.md)"
+            echo '   con la cita literal de TeamWin. Haz copia antes de seguir.'
+            echo
+            echo '### Enlaces'
+            echo
+            echo "- [README](${repo_url})"
+            echo "- [Instalacion, paso a paso](${repo_url}/blob/v${version}/docs/instalacion.md)"
+            echo "- [Operacion](${repo_url}/blob/v${version}/docs/operacion.md)"
+            echo "- [Recovery (TWRP y formateo de /data)](${repo_url}/blob/v${version}/docs/recovery.md)"
+            echo "- [Creditos](${repo_url}/blob/v${version}/docs/creditos.md)"
+            echo "- [Changelog](${repo_url}/blob/v${version}/CHANGELOG.md)"
+            echo "- [Comparar cambios](${repo_url}/compare/v${version}...HEAD)"
+            echo
+            echo '### Diagramas'
+            echo
+            echo "- [Arquitectura del stack](${repo_url}/blob/v${version}/docs/diagrams/stack-architecture.html)"
+            echo "- [Flujo de la camara](${repo_url}/blob/v${version}/docs/diagrams/flujo-camara.html)"
+            echo "- [Ciclo de vigilancia y respaldo](${repo_url}/blob/v${version}/docs/diagrams/ciclo-vigilancia-respaldo.html)"
+          } > "$RUNNER_TEMP/notes.md"
+
+          echo "--- notas ---"
+          cat "$RUNNER_TEMP/notes.md"
+
+      - name: Publicar el release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          # --verify-tag: que el tag exista de verdad en el remoto. Sin esto,
+          # gh crearia el release apuntando a un tag que no esta empujado.
+          # --notes-start-tag: los commits desde el tag anterior. Es lo unico
+          # querequiere el historial completo, y por eso el checkout usa
+          # fetch-depth: 0.
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "ezarr-stack $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --notes-start-tag
+
+      - name: Resumen
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGELOG_FOUND: ${{ steps.changelog.outputs.found }}
+        run: |
+          url=$(gh release view "$GITHUB_REF_NAME" --json url --jq .url 2>/dev/null || echo "(el release no se pudo leer)")
+          {
+            echo "### Release $GITHUB_REF_NAME"
+            echo
+            echo "- URL: $url"
+            echo "- Instalacion: clonar y ejecutar (\`--profile minimal\`); no hay \`curl | bash\`"
+            echo "- CHANGELOG de la version: $CHANGELOG_FOUND"
+          } >> "$GITHUB_STEP_SUMMARY"

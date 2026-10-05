@@ -1,0 +1,243 @@
+name: Diagramas
+
+# Regenera los tres diagramas de docs/diagrams/ y commitea si cambian.
+#
+# El render NO es un subgraph de muestra: es el mismo HTML que esta en el repo,
+# byte a byte, y eso se ha comprobado en local (cmp sin diferencias en los tres).
+# Si el renderMapper cambia de version y produce otro HTML, este workflow lo
+# commitea y el diff se ve en la PR. Eso es lo que queremos: que el HTML
+# generado nunca sea una copia pegada a mano que nadie vuelve a generar.
+#
+# AVISO HONESTO, escrito antes de que exista el primer run (2026-10-05): este
+# workflow NO puede llegar a verde tal como esta el repo hoy. Dos de los tres
+# diagramas declaran evidencia de fuente (docs/diagrams/flujo-camara.json y
+# docs/diagrams/stack-architecture.json, campo /meta/repository), y Archify se
+# niega a renderizar sin comprobar esa evidencia contra un checkout real. Hacen
+# falta DOS cosas que no estan en este repositorio:
+#
+#   1. Que ezarr-config sea clonable desde CI. hoy es PRIVADO
+#      (`gh repo view TU-USUARIO-GITHUB/ezarr-config` -> visibility: PRIVATE), asi
+#      que hace falta el secreto EZARR_CONFIG_TOKEN (un PAT con scope `repo`).
+#   2. Que la revision fijada exista en el remoto. Los tres JSONs apuntan a
+#      5256de364dcc3ac14586aa45dc33e0c5ca704608, que hoy es un commit SOLO
+#      LOCAL de /home/alan/ezarr-config: `git fetch origin 5256de3...` responde
+#      "upload-pack: not our ref". En el remoto solo hay 40154d29 (origin/master).
+#
+# El job falla si un diagrama no renderiza, y estos dos no renderizan hasta que
+# se arregle lo de arriba. No se relaja el render para que el CI quede verde:
+# un diagrama sin evidencia verificada es exactamente el fallo que este workflow
+# existe para no dejar pasar.
+#
+# Que no exista `curl | bash` ni instalador remoto (README.md:125) es
+# independiente de esto: esto regenera HTML que ya esta en el repo.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Un diagrama por vez en main: dos renders concurrentes pushearian el mismo
+# HTML y el segundo perderia el commit del primero.
+concurrency:
+  group: diagrams-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    name: renderizar los tres diagramas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Historial completo: el commit de diagramas se pushea encima de lo
+          # que hay, y con fetch-depth 1 un push concurrente seria un reject.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          # Archify declara engines.node >= 18. Se fija la major para que un
+          # cambio de la imagen de ubuntu-latest no mueva el HTML por debajo.
+          node-version: '20'
+
+      - name: Clonar Archify en la version fijada
+        run: |
+          set -euo pipefail
+          # Version fijada a proposito. Archify cambia el HTML que genera entre
+          # versiones, y sin fijar el SHA este workflow commitearia un HTML
+          # distinto en cada push por un cambio del que nadie se enteraria.
+          # Se actualiza cambiando esta linea; ver README de Archify para el
+          # CHANGELOG y comprobar antes el diff con un render en local.
+          ARCHIFY_REV=73aaa0696e8f72c232ea710e6fa94fd953f3e773
+          git init -q archify
+          cd archify
+          git remote add origin https://github.com/tt-a1i/archify
+          git fetch -q --depth 1 origin "$ARCHIFY_REV"
+          git checkout -q FETCH_HEAD
+          echo "Archify en $(git rev-parse --short HEAD) ($(node -p "require('./archify/package.json').version"))"
+
+      - name: Localizar diagramos y revisiones de evidencia
+        id: discover
+        run: |
+          set -euo pipefail
+          # Los JSON de docs/diagrams/ no son todos diagramas: hay recibos de
+          # finalize, delivery y browser-check. Un diagrama es el que trae
+          # /diagram_type. El tipo NO se escribe a mano: se lee del propio JSON,
+          # que es la unica fuente de verdad de que `lifecycle` corresponde a
+          # ciclo-vigilancia-respaldo y no al reves.
+          # El HTML de destino sale de /meta/output del propio JSON, no de
+          # aplicar un sufijo al nombre del JSON. No es un detalle: el fichero
+          # se llama ciclo-vigilancia-respaldo.html y su JSON se llama
+          # ciclo-vigilancia-respaldo.lifecycle.json, asi que derivar el nombre
+          # del JSON crearia un HTML nuevo con otro nombre y dejaria el
+          # antiguo sin regenerar, para siempre.
+          {
+            echo 'sources<<EOF'
+            for f in docs/diagrams/*.json; do
+              t=$(jq -r '.diagram_type // empty' "$f")
+              out=$(jq -r '.meta.output // empty' "$f")
+              [ -n "$t" ] && printf '%s\t%s\t%s\n' "$t" "$f" "$out"
+            done
+            echo EOF
+            echo 'revisions<<EOF'
+            for f in docs/diagrams/*.json; do
+              jq -r '.meta.repository.revision // empty' "$f"
+            done | sort -u | sed '/^$/d'
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+          echo "Diagramas fuente:"; sed -n '/sources<<EOF/,/^EOF$/p' "$GITHUB_OUTPUT" | sed '1d;$d'
+          echo "Revisiones de evidencia:"; sed -n '/revisions<<EOF/,/^EOF$/p' "$GITHUB_OUTPUT" | sed '1d;$d' || echo "(ninguna)"
+
+      - name: Clonar la evidencia y traer cada revision fijada
+        # Solo se ejecuta si algun diagrama declara evidencia. ciclo-vigilancia-
+        # respaldo.lifecycle.json no declara ninguna, asi que no necesita esto.
+        if: steps.discover.outputs.revisions != ''
+        env:
+          EZARR_CONFIG_TOKEN: ${{ secrets.EZARR_CONFIG_TOKEN }}
+          # Por env, no con `${{ }}` dentro del script: interpolar un valor
+          # dentro de un `run` es la via clasica de inyeccion de shell. Aqui los
+          # valores salen de los JSON del propio repo, asi que el riesgo es bajo,
+          # pero el patron correcto es este y no cuesta nada aplicarlo.
+          REVISIONS: ${{ steps.discover.outputs.revisions }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EZARR_CONFIG_TOKEN:-}" ]; then
+            echo "::error::Falta el secreto EZARR_CONFIG_TOKEN. Dos de los tres" \
+                 "diagramas declaran /meta/repository y Archify no renderiza sin" \
+                 "verificar la evidencia contra un checkout real de ezarr-config," \
+                 "que es un repositorio privado."
+            exit 1
+          fi
+          git init -q evidence
+          cd evidence
+          git remote add origin https://github.com/TU-USUARIO-GITHUB/ezarr-config.git
+          git -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$EZARR_CONFIG_TOKEN" | base64 -w0)" \
+              fetch -q --depth 1 origin master
+          # Sin esto Archify responde revision-unavailable aunque el token sea
+          # bueno: comprueba que el SHA este en el clon antes de renderear.
+          missing=0
+          for rev in $REVISIONS; do
+            if git -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$EZARR_CONFIG_TOKEN" | base64 -w0)" \
+                 fetch -q --depth 1 origin "$rev" 2>/dev/null; then
+              echo "revision $rev: en el remoto"
+            else
+              echo "::error::La revision $rev NO existe en el remoto de ezarr-config." \
+                   "Los JSON de docs/diagrams/ la fijan como evidencia, pero no se" \
+                   "ha pusheado. Pusheala, o vuelve a fijar la evidencia a una" \
+                   "revision que si exista en el remoto."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+
+      - name: Renderizar los tres diagramas
+        id: render
+        env:
+          # Ver el comentario del paso anterior: por env, no interpolando
+          # `${{ }}` dentro del script.
+          SOURCES: ${{ steps.discover.outputs.sources }}
+        run: |
+          set -euo pipefail
+          ARCHIFY="node archify/archify/bin/archify.mjs"
+          OUT="$RUNNER_TEMP/diagrams"
+          mkdir -p "$OUT"
+
+          # Se renderiza a un directorio temporal y solo se copia dentro del repo
+          # cuando los tres han rendu. Asi un fallo en el tercero no deja dos
+          # HTML a medio actualizar en el arbol que se va a commitear.
+          rendered=0
+          while IFS=$'\t' read -r type json out_rel; do
+            [ -n "$type" ] || continue
+            [ -n "$out_rel" ] || { echo "::error::$json no declara /meta/output"; exit 1; }
+            html="$OUT/$(basename "$out_rel")"
+
+            # La evidencia se pasa solo si el diagrama la declara. Un diagrama
+            # que no la declara, renduido con --repo-root, tambien falla.
+            if jq -e '.meta.repository.revision' "$json" >/dev/null 2>&1; then
+              $ARCHIFY render "$type" "$json" "$html" \
+                --quality showcase --repo-root evidence
+            else
+              $ARCHIFY render "$type" "$json" "$html" --quality showcase
+            fi
+
+            [ -s "$html" ] || { echo "::error::$json renderizo un HTML vacio"; exit 1; }
+            printf '%s\t%s\t%s\n' "$type" "$json" "$out_rel" >> "$RUNNER_TEMP/rendered.tsv"
+            rendered=$((rendered + 1))
+            echo "OK  $type  $json -> $out_rel"
+          done <<< "$SOURCES"
+
+          [ "$rendered" -eq 3 ] || { echo "::error::Se esperaban 3 diagramas y se renderizaron $rendered"; exit 1; }
+          echo "rendered=3" >> "$GITHUB_OUTPUT"
+
+          # A la ruta que declara cada JSON, no a un unico directorio: asi el
+          # HTML regenerado sustituye al commiteado en su sitio.
+          while IFS=$'\t' read -r type json out_rel; do
+            [ -n "$type" ] || continue
+            cp "$OUT/$(basename "$out_rel")" "$out_rel"
+          done < "$RUNNER_TEMP/rendered.tsv"
+
+      - name: Comprobar que el HTML es un diagrama de verdad
+        # `render` puede devolver 0 y escribir un HTML que no es un diagrama.
+        # `check` es el que verifica el SVG: sin el, el paso de arriba basta.
+        run: |
+          set -euo pipefail
+          for html in docs/diagrams/*.html; do
+            jq_out=$(node archify/archify/bin/archify.mjs check "$html" --json)
+            if [ "$(jq -r '.ok' <<< "$jq_out")" != "true" ]; then
+              echo "::error::check no OK para $html"
+              jq -r '.checks[]? | select(.ok == false) | "  \(.name): \(.details | join("; "))"' <<< "$jq_out"
+              exit 1
+            fi
+            echo "OK  $html"
+          done
+
+      - name: Commit si los diagramas cambiaron
+        run: |
+          set -euo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add docs/diagrams
+          if git diff --cached --quiet; then
+            echo "Los diagramas no han cambiado: no hay nada que commitear."
+            exit 0
+          fi
+          git commit -q -m 'diagramas: regenerar con Archify'
+          git push origin HEAD:main
+          echo "Commit de diagramas pusheado: $(git rev-parse --short HEAD)"
+
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo "### Diagramas"
+            echo
+            echo '| tipo | fuente | HTML |'
+            echo '| --- | --- | --- |'
+            if [ -f "$RUNNER_TEMP/rendered.tsv" ]; then
+              while IFS=$'\t' read -r type json out_rel; do
+                echo "| \`$type\` | \`$json\` | \`$out_rel\` |"
+              done < "$RUNNER_TEMP/rendered.tsv"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

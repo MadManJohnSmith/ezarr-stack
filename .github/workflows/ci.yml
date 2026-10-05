@@ -1,0 +1,59 @@
+name: CI
+
+# El CI corre EXACTAMENTE la comprobacion que el README afirma: la suite de
+# contrato. No la sustituye por una version recortada ni por algo mas rapido.
+# Si esto pasa, el README puede decir "probado"; si falla, el README esta
+# mintiendo y hay que arreglarlo antes que la insignia.
+#
+# Aviso honesto (2026-10-05): `bash tests/smoke.sh` sale con codigo 1. Los dos
+# fallos son de `docs/diagrams/**` (un SHA de commit de 40 hex, dos sumas de
+# fuente de 64 hex y tres IPs de LAN), no del codigo. Este workflow esta en rojo
+# a proposito hasta que se limpien los diagramas: un CI verde por haber relajado
+# la comprobacion no vale nada.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: bash tests/smoke.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sintaxis de los scripts
+        run: |
+          set -e
+          for f in ezarr.sh ezarrctl arr-stack lib/*.sh tests/smoke.sh; do
+            printf '%-24s ' "$f"
+            bash -n "$f" && echo "OK"
+          done
+
+      # Se guarda la salida entera para poder adjuntarla cuando algo falla.
+      # pipefail es obligatorio: sin el, el exit code seria el de tee y el CI
+      # passaria en verde con la suite en rojo.
+      - name: Suite de contrato
+        run: |
+          set -o pipefail
+          bash tests/smoke.sh 2>&1 | tee smoke.log
+
+      # smoke.sh ya comprueba secretos, IPs de LAN y permisos. Aqui se repite
+      # solo el contrato de plan, que es lo que el README publica.
+      - name: El plan por defecto se puede revisar
+        run: ./ezarr.sh --dry-run --profile minimal
+
+      - name: El plan es JSON estable (lo que consume CI)
+        run: ./ezarr.sh --dry-run --only core --json
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-output
+          path: smoke.log
+          retention-days: 7

@@ -1,0 +1,255 @@
+#!/bin/bash
+# =============================================================================
+#  arr-stack — el gestor de servicios del stack ezarr
+# =============================================================================
+#
+#  POR QUE ESTE SCRIPT EXISTE
+#    El chroot del telefono no tiene systemd. El unico sitio que sabe como se
+#    levanta cada cosa es este fichero, y tanto ezarrctl como el instalador lo
+#    llaman; no hay una segunda implementacion escondida en ningun sitio.
+#
+#  USO
+#    arr-stack start   [servicio...]      arranca uno o varios (o todos)
+#    arr-stack stop    [servicio...]      para uno o varios (o todos)
+#    arr-stack restart [servicio...]      para y arranca
+#    arr-stack status  [servicio...]      running | stopped, uno por linea
+#    arr-stack list                      el catalogo y lo que hay vivo ahora
+#
+#  SIN ARGUMENTOS
+#    Arranca o para SOLO los servicios de los componentes instalados, leyendo
+#    $EZARR_STATE_DIR/components.list (lo escribe el instalador). Sin ese
+#    fichero no hay instalacion que respetar, asi que se avisa y no se toca
+#    nada: arrancar servicios que nadie instalo es peor que no arrancar nada.
+#
+#  AUTOCONTENIDO A PROPOSITO
+#    Se instala en $EZARR_BIN_DIR (por defecto /usr/local/bin) y desde ahi no
+#    tiene a mano lib/, asi que no se apoya en ningun fichero del repo. Por eso
+#    lleva su propia tabla de servicios en vez de leer la de lib/stack.sh.
+#
+#  SALIDA
+#    0 si todo lo pedido quedo como se pidio · 1 si algo fallo · 2 uso invalido.
+# =============================================================================
+
+set -uo pipefail
+
+EZARR_STACK_VERSION="${EZARR_STACK_VERSION:-1.0.0}"
+EZARR_STATE_DIR="${EZARR_STATE_DIR:-/var/lib/ezarr}"
+EZARR_LOG_DIR="${EZARR_LOG_DIR:-/var/log/ezarr}"
+
+# ------------------------------------------------------- catalogo de servicios
+# id|componente|patron_pgrep|orden_de_arranque|orden_de_parada
+#
+# El patron es el de lib/stack.sh y es lo que decide si algo esta vivo. La orden
+# de parada es opcional: si falta se cae a `pkill -f <patron>`, que es correcto
+# para todo lo que se gestiona con un proceso.
+#
+# Las dos órdenes se evaluan como linea de shell, asi que pueden llevar un
+# `cd ... &&` delante cuando el servicio necesita su directorio de trabajo.
+#
+# Lo que NO esta aqui y no se va a inventar: rclone y mergerfs son montajes
+# FUSE, no procesos de los que este script pueda saber si estan healthy. Se
+# listan aparte y se dice explicitamente, en vez de fingir que arrancaron.
+SERVICES=(
+  "cron|core|cron|cron|"
+  "redis|core|redis-server|redis-server --daemonize yes|"
+  "avahi|core|avahi-daemon|avahi-daemon --daemonize --no-drop-root --exit-idle|"
+  "jellyfin|media|/usr/bin/jellyfin|jellyfin --no-autorun|"
+  "qbittorrent|downloads|qbittorrent-nox|qbittorrent-nox -d --webport=8081|"
+  "prowlarr|downloads|/opt/Prowlarr/Prowlarr|/opt/Prowlarr/Prowlarr -nobrowser|"
+  "jackett|downloads|jackett|/opt/Jackett/JackettConsole|"
+  "sonarr|arr|/opt/Sonarr/Sonarr|/opt/Sonarr/Sonarr -nobrowser|"
+  "radarr|arr|/opt/Radarr/Radarr|/opt/Radarr/Radarr -nobrowser|"
+  "bazarr|subs|bazarr|/opt/Bazarr/Bazarr|"
+  "homarr|dashboard|next-server|cd /opt/homarr && ./bin/next start|"
+  "motion|camera|motion -c|motion -c /etc/motion/motion.conf|"
+  "cloudflared|remote|cloudflared tunnel|cloudflared tunnel run|"
+  "tailscale|remote|tailscaled|tailscaled --state=/var/lib/tailscale/tailscaled.state|"
+  "nginx|reverse|nginx: master|nginx|nginx -s quit"
+  "flaresolverr|search|flaresolverr|flaresolverr|"
+)
+
+# Montajes FUSE: se reconocen para poder decir "esto no lo gestiona arr-stack"
+# en voz alta en vez de omitirlos en silencio.
+UNMANAGED=(
+  "rclone|storage"
+  "mergerfs|storage"
+)
+
+# ------------------------------------------------------------------- salida --
+if [ -t 2 ] && [ -z "${EZARR_NO_COLOR:-}" ] && [ "${TERM:-dumb}" != "dumb" ]; then
+    C_RED=$'\033[31m'; C_GRN=$'\033[32m'; C_YEL=$'\033[33m'
+    C_DIM=$'\033[2m'; C_OFF=$'\033[0m'
+else
+    C_RED=''; C_GRN=''; C_YEL=''; C_DIM=''; C_OFF=''
+fi
+say()  { printf '%s  %s%s\n'   "$C_DIM" "$*" "$C_OFF" >&2; }
+ok()   { printf 'ok       %s\n' "$*" >&2; }
+warn() { printf 'aviso    %s\n' "$*" >&2; }
+err()  { printf 'error    %s\n' "$*" >&2; }
+
+# --------------------------------------------------------------- catalogo ----
+# svc_field <id> <n>  imprime el campo n (1..5) del registro, o falla.
+svc_field() {
+    local id="$1" n="$2" line
+    for line in "${SERVICES[@]}"; do
+        case "$line" in
+            "$id|"*) printf '%s' "$(printf '%s' "$line" | cut -d'|' -f"$n")"; return 0 ;;
+        esac
+    done
+    return 1
+}
+svc_ids()      { local line; for line in "${SERVICES[@]}"; do printf '%s\n' "${line%%|*}"; done; }
+svc_component(){ svc_field "$1" 2; }
+svc_pattern()  { svc_field "$1" 3; }
+svc_start_cmd(){ svc_field "$1" 4; }
+svc_stop_cmd() { svc_field "$1" 5; }
+svc_known()    { svc_field "$1" 1 >/dev/null 2>&1; }
+
+# Los servicios que tocan: los de los argumentos, o los de los componentes
+# instalados. Sin components.list no se inventa: se avisa y no se hace nada.
+svc_selected() {
+    if [ "$#" -gt 0 ]; then printf '%s\n' "$@"; return 0; fi
+    local list="${EZARR_STATE_DIR}/components.list"
+    if [ ! -r "$list" ]; then
+        warn "no hay ${EZARR_STATE_DIR}/components.list: no se sabe que esta instalado"
+        warn "instala antes con ezarr.sh, o nombra los servicios: arr-stack start <svc>..."
+        return 1
+    fi
+    local id out=""
+    for id in $(svc_ids); do
+        grep -qx -- "$(svc_component "$id")" "$list" 2>/dev/null && out="$out $id"
+    done
+    printf '%s\n' $out
+    return 0
+}
+
+# ------------------------------------------------------------------ estado ---
+svc_running() {  # svc_running <id> -> 0 si el proceso existe
+    local pat; pat="$(svc_pattern "$1")"
+    [ -n "$pat" ] || return 1
+    pgrep -f "$pat" >/dev/null 2>&1
+}
+svc_status() { if svc_running "$1"; then echo running; else echo stopped; fi; }
+
+# Si el binario de un servicio no esta instalado, ese servicio no se puede
+# arrancar: no es un fallo de arr-stack. Distinguirlo evita que "no instalado"
+# cuente como "arrancado y caido", que es un diagnostico falso.
+cmd_exists() {
+    local c="${1%% *}"
+    case "$c" in
+        */*) [ -x "$c" ] ;;
+        *)   command -v -- "$c" >/dev/null 2>&1 ;;
+    esac
+}
+
+# ------------------------------------------------------------------ start ---
+do_start() {
+    local id="$1" cmd
+    if svc_running "$id"; then
+        say "$id ya estaba arriba"
+        return 0
+    fi
+    cmd="$(svc_start_cmd "$id")"
+    [ -n "$cmd" ] || { err "$id: no hay orden de arranque"; return 1; }
+    if ! cmd_exists "$cmd"; then
+        warn "$id no arranca: el binario no esta instalado (no es un fallo de arr-stack)"
+        return 0
+    fi
+    mkdir -p "$EZARR_LOG_DIR" 2>/dev/null || true
+    # Los servicios van en segundo plano y su salida al log, no a la terminal de
+    # quien esta jugando con el telefono. Ninguno se queda en primer plano:
+    # por eso el arr-stack de apply_activar puede terminar y dejar todo arriba.
+    ( cd "${EZARR_SERVICE_DIR:-/}" 2>/dev/null || cd /; eval "$cmd" ) \
+        >>"$EZARR_LOG_DIR/$id.log" 2>&1 &
+    sleep "${EZARR_START_WAIT:-2}"
+    if svc_running "$id"; then
+        ok "$id arriba (log: ${EZARR_LOG_DIR}/$id.log)"
+        return 0
+    fi
+    warn "$id no arranco; mira ${EZARR_LOG_DIR}/$id.log"
+    return 1
+}
+
+# ------------------------------------------------------------------- stop ---
+do_stop() {
+    local id="$1" pat cmd i
+    if ! svc_running "$id"; then
+        say "$id ya estaba parado"
+        return 0
+    fi
+    pat="$(svc_pattern "$id")"
+    cmd="$(svc_stop_cmd "$id")"
+    if [ -n "$cmd" ]; then
+        eval "$cmd" >/dev/null 2>&1 || true
+    else
+        pkill -f "$pat" 2>/dev/null || true
+    fi
+    for i in $(seq 1 "${EZARR_STOP_WAIT:-5}"); do
+        svc_running "$id" || { ok "$id parado"; return 0; }
+        sleep 1
+    done
+    # Lo que no se para solo se para a la fuerza. Es un proceso nuestro y el
+    # chroot no tiene systemd que lo haga por su cuenta.
+    pkill -9 -f "$pat" 2>/dev/null || true
+    sleep 1
+    if svc_running "$id"; then err "$id sigue vivo"; return 1; fi
+    ok "$id parado (a la fuerza)"
+    return 0
+}
+
+# ------------------------------------------------------------------- list ---
+do_list() {
+    local id comp
+    printf '%-13s %-11s %-9s %s\n' "SERVICIO" "COMPONENTE" "ESTADO" "GESTIONADO" >&2
+    for id in $(svc_ids); do
+        printf '%-13s %-11s %-9s %s\n' "$id" "$(svc_component "$id")" "$(svc_status "$id")" "si" >&2
+    done
+    for id in "${UNMANAGED[@]}"; do
+        comp="${id##*|}"
+        printf '%-13s %-11s %-9s %s\n' "${id%%|*}" "$comp" "montaje" "no (FUSE)" >&2
+    done
+    say "arr-stack ${EZARR_STACK_VERSION}"
+    say "los montajes FUSE no los gestiona este script: se montan a mano o con tu propio unit"
+    return 0
+}
+
+usage() {
+    # El bloque de comentario inicial ES la ayuda: no puede quedar desfasado
+    # respecto al resto del fichero.
+    awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0" >&2
+}
+
+main() {
+    local action="${1:-}"
+    [ "$#" -gt 0 ] && shift
+    case "$action" in
+        start|stop|restart|status) ;;
+        list)             do_list; return 0 ;;
+        ''|-h|--help|help) usage; return 0 ;;
+        *) err "accion desconocida: $action"; usage; return 2 ;;
+    esac
+
+    # Un nombre que no existe en el catalogo es un error de quien lo escribio,
+    # no algo que se pase en silencio.
+    local id rc=0 ids
+    for id in "$@"; do
+        svc_known "$id" || { err "servicio desconocido: $id"; rc=1; }
+    done
+    [ "$rc" -eq 0 ] || return "$rc"
+
+    ids="$(svc_selected "$@")" || return 1
+    [ -n "$ids" ] || { err "no hay servicios que $action"; return 1; }
+
+    for id in $ids; do
+        case "$action" in
+            start)   do_start   "$id" || rc=1 ;;
+            stop)    do_stop    "$id" || rc=1 ;;
+            restart) do_stop    "$id" || rc=1; do_start "$id" || rc=1 ;;
+            status)  printf '%-13s %s\n' "$id" "$(svc_status "$id")" >&2 ;;
+        esac
+    done
+    return "$rc"
+}
+
+main "$@"
+exit $?

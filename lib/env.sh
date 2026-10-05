@@ -12,6 +12,10 @@
 # --------------------------------------------------------------- proceso 1 --
 # El mejor senal de "estoy en un chroot" es que PID 1 no es el init esperado.
 ezarr_pid1_comm() { cat /proc/1/comm 2>/dev/null || echo "?"; }
+# El binario al que apunta PID 1. Es la unica senal de "que initfs corre" que
+# no depende de rutas del host: /proc/1/exe se ve igual desde el chroot que desde
+# fuera, mientras que /system, /tmp/TWRP o /metadata no existen dentro.
+ezarr_pid1_exe() { readlink /proc/1/exe 2>/dev/null || echo ""; }
 
 # --------------------------------------------------- deteccion del entorno --
 # Rellena:
@@ -27,47 +31,75 @@ ezarr_detect_env() {
     EZARR_ENV_TWRP=0
     EZARR_ENV_INIT="none"
 
-    local pid1; pid1="$(ezarr_pid1_comm)"
+    local pid1 pid1_exe
+    pid1="$(ezarr_pid1_comm)"
+    pid1_exe="$(ezarr_pid1_exe)"
 
     # --- Android como host ---------------------------------------------------
-    # TWRP deja /tmp/TWRP y escribe su version en /tmp/recovery/version.
+    # Estas cuatro senales son del HOST y solo se ven si el instalador corre
+    # directamente sobre el (recovery de TWRP, Android vivo con adb). Dentro del
+    # chroot no existen: ahi / es el / del chroot, no el / de Android, asi que
+    # comprobarlas no da la respuesta y da sensacion de haber comprobado algo.
     if [ -d /tmp/TWRP ] || [ -f /tmp/recovery/version ] || [ -f /tmp/twrp ]; then
         EZARR_ENV_TWRP=1
         EZARR_ENV_ANDROID=1
     fi
-    # Un Android vivo con ADB tambien se reconoce por /system/build.prop.
     if [ -f /system/build.prop ] && [ -d /data/local/tmp ]; then
         EZARR_ENV_ANDROID=1
     fi
-    # Host Android sin TWRP: puede quedar rastro en /proc/version o en /metadata.
     if [ -d /metadata ] || [ -f /proc/config.gz.ghost ]; then
         EZARR_ENV_ANDROID=1
     fi
+    # La senal que SI sobrevive al chroot: el init de Android se llama
+    # literalmente "init" (env.sh:14), asi que el nombre no lo distingue de un
+    # init normal, pero el binario al que apunta es /system/bin/init.
+    case "$pid1_exe" in
+        /system/bin/init|/system/xbin/init|/system/*) EZARR_ENV_ANDROID=1 ;;
+    esac
 
     # --- chroot --------------------------------------------------------------
     # Tres senales independientes, porque ninguna sola es concluyente:
     #   1. marcador explicito que escribe el propio instalador
-    #   2. PID 1 no es systemd/init del host -> namespace de otro initfs
-    #   3. la raiz "/" y la raiz de PID 1 son el mismo inodo (chroot, no container)
-    local chroot=0
-    if [ -f /etc/ezarr/chroot.marker ]; then
-        chroot=1
-        EZARR_ENV_ROOTFS_MNT="$(sed -n 's/^MOUNTPOINT=//p' /etc/ezarr/chroot.marker 2>/dev/null | head -n1)"
+    #   2. PID 1 no es systemd -> namespace/initfs de otro
+    #   3. que PID 1 viva bajo /system -> el host es Android, no este chroot
+    # La ruta del marcador sale de $EZARR_CONF_DIR: el que escribe
+    # ezarr_write_env_marker pone ahi, no en /etc/ezarr fijo.
+    local chroot=0 marker="${EZARR_CONF_DIR:-/etc/ezarr}/chroot.marker" mkind
+    if [ -f "$marker" ]; then
+        EZARR_ENV_ROOTFS_MNT="$(sed -n 's/^MOUNTPOINT=//p' "$marker" 2>/dev/null | head -n1)"
+        # KIND= lo escribio el instalador en su momento, cuando aun no habia nada
+        # que decidir. Es mas fiable que volver a adivinarlo ahora.
+        mkind="$(sed -n 's/^KIND=//p' "$marker" 2>/dev/null | head -n1)"
+        case "$mkind" in
+            chroot|machine|unknown) EZARR_ENV_KIND="$mkind" ;;
+        esac
+        [ "$mkind" = "chroot" ] && chroot=1
     fi
-    if [ "$chroot" -eq 0 ] && [ "$pid1" != "systemd" ] && [ "$pid1" != "init" ]; then
-        # busybox-init (TWRP) o el propio init del chroot arrancado con chroot+unshare.
+    if [ "$chroot" -eq 0 ] && [ "$pid1" != "systemd" ]; then
+        # Android (init de /system) o un initfs de recovery (busybox). Antes se
+        # exigia pid1 != "init" para entrar aqui, y eso descartaba justo el caso
+        # de Android, que es donde vive el chroot de TWRP.
+        case "$pid1_exe" in
+            /system/*) chroot=1; EZARR_ENV_ANDROID=1 ;;
+        esac
         case "$pid1" in
-            busybox|sh|*android*|*survival*|*init*|/sbin/init) chroot=1 ;;
-            *) : ;;
+            busybox|sh|*android*|*survival*) chroot=1 ;;
         esac
     fi
-    if [ "$chroot" -eq 1 ]; then EZARR_ENV_KIND="chroot"; else EZARR_ENV_KIND="machine"; fi
+    if [ "$chroot" -eq 1 ]; then
+        EZARR_ENV_KIND="chroot"
+    elif [ "$EZARR_ENV_KIND" != "chroot" ]; then
+        EZARR_ENV_KIND="machine"
+    fi
 
     # --- init / gestor de servicios -----------------------------------------
     # El stack no usa systemd en el chroot: se gobierna con arr-stack + cron.
     if [ -d /run/systemd/system ] && [ "$pid1" = "systemd" ]; then
         EZARR_ENV_INIT="systemd"
-    elif [ -x /usr/sbin/service ] && [ -d /etc/init.d ]; then
+    # En un chroot, /etc/init.d y /usr/sbin/service pueden estar ahi pero
+    # pertenece al host: no son el gestor de estos servicios. Sin systemd se
+    # queda en "none", que es lo que refleja de verdad.
+    elif [ "$EZARR_ENV_KIND" = "machine" ] && [ -x /usr/sbin/service ] && [ -d /etc/init.d ]; then
         EZARR_ENV_INIT="sysv"
     else
         EZARR_ENV_INIT="none"
@@ -134,16 +166,54 @@ tool_path() {
 have() { tool_path "$@" >/dev/null 2>&1; }
 
 # --------------------------------------------------------------- red y DNS --
-# El chroot arranca a veces sin resolv.conf valido (arr-stack lo parchea con
-# 1.1.1.1). Detectar eso ANTES de descargar nada evita un fallo confuso.
+# El chroot arranca a veces sin resolv.conf valido, y detectarlo ANTES de
+# descargar nada: si no, el fallo sale en el paso 5 como "no se pudo descargar",
+# que no dice nada de la causa.
+#
+# Tres comprobaciones, y solo la ultima DECIDE:
+#   1. DNS. Sin nombres no hay descarga aunque haya salida: pesa mas que el TCP.
+#   2. Salida por IP. No decide, pero distingue "no hay red" de "no hay nombres".
+#   3. Una peticion HTTP de verdad, por el proxy y el TLS que usara el paso 5.
+# Y ninguna contra un dominio de este proyecto: la comprobacion tiene que
+# seguir siendo valida cuando el dominio no existe todavia, que es el caso
+# normal hasta que haya una release publicada.
 ezarr_network_ok() {
     [ "${EZARR_OFFLINE:-0}" = "1" ] && return 0
-    if have curl; then
-        curl -fsS -m "${EZARR_NET_TIMEOUT:-8}" -o /dev/null "https://stack.example.com/" 2>/dev/null && return 0
-    elif have wget; then
-        wget -q -T "${EZARR_NET_TIMEOUT:-8}" -O /dev/null "https://stack.example.com/" 2>/dev/null && return 0
+    local t="${EZARR_NET_TIMEOUT:-8}" host
+    EZARR_NET_WHY=""
+    host="$(printf '%s' "${EZARR_RELEASE_BASE:-https://packages.example.com}" | sed -e 's|^[a-zA-Z][a-zA-Z0-9+.-]*://||' -e 's|/.*$||')"
+
+    # 1. DNS del host de descarga.
+    if ! { have getent && getent hosts "$host" >/dev/null 2>&1; }; then
+        EZARR_NET_WHY="$host no resuelve (revisa /etc/resolv.conf)"
     fi
+
+    # 2. Salida a internet por IP, sin depender del DNS ni del proxy.
+    if ! timeout "$t" bash -c "exec 3<>/dev/tcp/${EZARR_NET_PROBE_IP:-1.1.1.1}/443" 2>/dev/null; then
+        EZARR_NET_WHY="${EZARR_NET_WHY:+$EZARR_NET_WHY; }sin salida TCP a ${EZARR_NET_PROBE_IP:-1.1.1.1}:443"
+    fi
+
+    # 3. La pregunta que importa: se puede bajar algo. Primero un endpoint neutro
+    # de conectividad y, si tampoco responde, el host real de la descarga, que
+    # es el ultimo recurso porque es el unico que prueba el camino completo.
+    if ezarr_http_ok "${EZARR_NET_PROBE_URL:-https://connectivitycheck.gstatic.com/generate_204}" "$t" \
+    || ezarr_http_ok "$host" "$t"; then
+        return 0
+    fi
+    EZARR_NET_WHY="${EZARR_NET_WHY:+$EZARR_NET_WHY; }ninguna peticion HTTP responde"
     return 1
+}
+
+# Un GET a $1 con el timeout $2. 0 si hay respuesta HTTP de verdad (2xx/3xx).
+ezarr_http_ok() {
+    local url="$1" t="${2:-8}"
+    if have curl; then
+        curl -fsS -m "$t" -o /dev/null "$url" 2>/dev/null
+    elif have wget; then
+        wget -q -T "$t" -O /dev/null "$url" 2>/dev/null
+    else
+        return 1
+    fi
 }
 
 # --------------------------------------------------------------- temporales --
@@ -203,15 +273,31 @@ ezarr_env_summary() {
 }
 
 # -------------------------------------------------- marcadores del entorno ----
-# El instalador escribe /etc/ezarr/chroot.marker para que la deteccion no dependa
-# de heuristicas en la siguiente ejecucion (y para saber donde vive el rootfs).
+# El instalador escribe $EZARR_CONF_DIR/chroot.marker para que la deteccion no
+# dependa de heuristicas en la siguiente ejecucion (y para saber donde vive el
+# rootfs). La ruta sale de $EZARR_CONF_DIR y no de /etc/ezarr escrito a fuego:
+# con el directorio cambiado, un marcador en la ruta por defecto lo escribiria
+# donde el resto de la configuracion no esta y nadie lo leeria.
 ezarr_write_env_marker() {
-    local marker="/etc/ezarr/chroot.marker"
-    ezarr_fs_write "$marker" "MOUNTPOINT=${EZARR_ENV_ROOTFS_MNT:-}
+    local marker="${EZARR_CONF_DIR:-/etc/ezarr}/chroot.marker"
+    # Por el envoltorio fs_*, y no por ezarr_fs_write: ese nombre no existe en
+    # ningun sitio (los envoltorios son fs_write/fs_mkdir/... en lib/plan.sh) y,
+    # sobre todo, solo fs_* pasa la auditoria de dry-run, que comprueba que EZARR_
+    # FS_PERFORMED se queda en 0 cuando EZARR_DRY_RUN=1.
+    if command -v fs_write >/dev/null 2>&1; then
+        fs_write "$marker" "MOUNTPOINT=${EZARR_ENV_ROOTFS_MNT:-}
 KIND=${EZARR_ENV_KIND}
 ARCH=${EZARR_ENV_ARCH}
 WRITTEN=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 " 0644
+        return $?
+    fi
+    # ezarrctl no carga lib/plan.sh: ahi no hay envoltorios y no se esta
+    # instalando nada, asi que no hay mutacion que auditar.
+    mkdir -p -- "$(dirname -- "$marker")" 2>/dev/null || return 1
+    printf 'MOUNTPOINT=%s\nKIND=%s\nARCH=%s\nWRITTEN=%s\n' \
+        "${EZARR_ENV_ROOTFS_MNT:-}" "${EZARR_ENV_KIND:-}" "${EZARR_ENV_ARCH:-}" \
+        "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$marker"
 }
 
 # Chroot con celdas de 7 GB: el umbral no es arbitrario, es donde Jellyfin + el

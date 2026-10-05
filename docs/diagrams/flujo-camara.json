@@ -1,0 +1,745 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Flujo de la cámara: del movimiento al historial",
+    "subtitle": "Motion + RTSP → aviso a ntfy → clip MP4 → Drive (aplazado si Jellyfin está reproduciendo) → 5 clips en local, 30 días en Drive → biblioteca «Camara»",
+    "output": "docs/diagrams/flujo-camara.html",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "auto"
+    },
+    "views": [
+      {
+        "id": "regla-jellyfin",
+        "label": "La regla: nunca competir con el streaming",
+        "focus": [
+          "clips",
+          "upload",
+          "guard",
+          "cronupload",
+          "drive"
+        ],
+        "note": "Si Jellyfin reproduce, cam-upload.sh sale sin subir. El cron */15 no lo comprueba."
+      },
+      {
+        "id": "push-movil",
+        "label": "El push al móvil",
+        "focus": [
+          "camip",
+          "motion",
+          "notify",
+          "framegrab",
+          "ntfy"
+        ],
+        "note": "Frame fresco con 8 s de límite; si falla, la foto del último minuto; si no hay, solo texto."
+      },
+      {
+        "id": "clip",
+        "label": "Cuándo empieza y acaba un clip",
+        "focus": [
+          "motion",
+          "extpipe",
+          "movie",
+          "clips"
+        ],
+        "note": "30 s sin movimiento cierran el evento, más 10 s de cola. Tope de 5 min por clip."
+      },
+      {
+        "id": "retencion",
+        "label": "Retención e historial",
+        "focus": [
+          "drive",
+          "prune",
+          "gcdrive",
+          "scan",
+          "jflib"
+        ],
+        "note": "5 clips en local, 30 días en Drive, y el histórico se ve en la biblioteca «Camara»."
+      },
+      {
+        "id": "todo",
+        "label": "El flujo completo",
+        "focus": [
+          "camip",
+          "motion",
+          "notify",
+          "framegrab",
+          "ntfy",
+          "extpipe",
+          "movie",
+          "clips",
+          "upload",
+          "guard",
+          "drive",
+          "cronupload",
+          "prune",
+          "gcdrive",
+          "scan",
+          "jflib"
+        ],
+        "note": "Del RTSP a la biblioteca, con la regla de Jellyfin en el centro."
+      }
+    ],
+    "repository": {
+      "url": "https://github.com/TU-USUARIO-GITHUB/ezarr-stack",
+      "provider": "github",
+      "link_mode": "local-only"
+    }
+  },
+  "stages": [
+    {
+      "label": "Captura: RTSP, movimiento y aviso"
+    },
+    {
+      "label": "Grabación del clip"
+    },
+    {
+      "label": "Subida a Drive (aplazable)"
+    },
+    {
+      "label": "Retención e historial"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "camip",
+      "type": "external",
+      "label": "Cámara IP",
+      "sublabel": "RTSP TCP · .38:8554",
+      "tag": "netcam_url",
+      "icon": "external",
+      "stage": 0,
+      "row": 0,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/etc/motion/motion.conf",
+          "line": 14,
+          "label": "URL literal"
+        },
+        {
+          "path": "configs/usr/local/bin/cam-conf.sh",
+          "line": 33,
+          "label": "cam-conf la reescribe"
+        }
+      ]
+    },
+    {
+      "id": "motion",
+      "type": "backend",
+      "label": "Motion",
+      "sublabel": "detecta movimiento",
+      "tag": "4 frames mínimos",
+      "icon": "active",
+      "stage": 0,
+      "row": 1,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/etc/motion/motion.conf",
+          "line": 20,
+          "label": "threshold 3500"
+        },
+        {
+          "path": "configs/etc/motion/motion.conf",
+          "line": 23,
+          "label": "minimum_motion_frames 4"
+        }
+      ]
+    },
+    {
+      "id": "notify",
+      "type": "backend",
+      "label": "cam-notify.sh",
+      "sublabel": "on_event_start",
+      "tag": "cooldown 5 min",
+      "icon": "backend",
+      "stage": 0,
+      "row": 2,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/etc/motion/motion.conf",
+          "line": 36,
+          "label": "on_event_start"
+        },
+        {
+          "path": "configs/usr/local/bin/cam-notify.sh",
+          "line": 21,
+          "label": "cooldown 300 s"
+        }
+      ]
+    },
+    {
+      "id": "framegrab",
+      "type": "backend",
+      "label": "ffmpeg · 1 frame",
+      "sublabel": "timeout 8 s",
+      "tag": "2ª sesión RTSP",
+      "icon": "backend",
+      "stage": 0,
+      "row": 3,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/cam-notify.sh",
+          "line": 29,
+          "label": "timeout 8"
+        },
+        {
+          "path": "configs/usr/local/bin/cam-notify.sh",
+          "line": 31,
+          "label": "/run/cam-alert.jpg"
+        }
+      ]
+    },
+    {
+      "id": "ntfy",
+      "type": "external",
+      "label": "ntfy → móvil",
+      "sublabel": "push con la foto",
+      "tag": "3 degradaciones",
+      "icon": "external",
+      "stage": 0,
+      "row": 4,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/cam-notify.sh",
+          "line": 35,
+          "label": "sube alerta.jpg"
+        },
+        {
+          "path": "configs/usr/local/bin/cam-notify.sh",
+          "line": 39,
+          "label": "solo texto"
+        }
+      ]
+    },
+    {
+      "id": "extpipe",
+      "type": "backend",
+      "label": "ffmpeg extpipe",
+      "sublabel": "libx264 crf 28",
+      "tag": "rawvideo 1080p@16",
+      "icon": "backend",
+      "stage": 1,
+      "row": 0,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/etc/motion/motion.conf",
+          "line": 30,
+          "label": "movie_extpipe_use on"
+        },
+        {
+          "path": "configs/etc/motion/motion.conf",
+          "line": 31,
+          "label": "veryfast, +faststart"
+        }
+      ]
+    },
+    {
+      "id": "movie",
+      "type": "backend",
+      "label": "Clip MP4",
+      "sublabel": "gap 30 s + post 10 s",
+      "tag": "máx. 5 min",
+      "icon": "backend",
+      "stage": 1,
+      "row": 1,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/etc/motion/motion.conf",
+          "line": 25,
+          "label": "event_gap 30"
+        },
+        {
+          "path": "configs/etc/motion/motion.conf",
+          "line": 27,
+          "label": "post_capture 10"
+        },
+        {
+          "path": "configs/etc/motion/motion.conf",
+          "line": 33,
+          "label": "movie_max_time 300"
+        }
+      ]
+    },
+    {
+      "id": "clips",
+      "type": "database",
+      "label": "/data/media/Camera",
+      "sublabel": "mergerfs → /data/local",
+      "tag": "target_dir",
+      "icon": "database",
+      "stage": 1,
+      "row": 2,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/etc/motion/motion.conf",
+          "line": 39,
+          "label": "target_dir"
+        },
+        {
+          "path": "configs/usr/local/bin/mount-gdrive.sh",
+          "line": 62,
+          "label": "category.create=ff"
+        }
+      ]
+    },
+    {
+      "id": "upload",
+      "type": "backend",
+      "label": "cam-upload.sh",
+      "sublabel": "on_movie_end",
+      "tag": "flock · 1 a la vez",
+      "icon": "backend",
+      "stage": 2,
+      "row": 0,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/etc/motion/motion.conf",
+          "line": 37,
+          "label": "on_movie_end"
+        },
+        {
+          "path": "configs/usr/local/bin/cam-upload.sh",
+          "line": 6,
+          "label": "lee /data/local"
+        },
+        {
+          "path": "configs/usr/local/bin/cam-upload.sh",
+          "line": 25,
+          "label": "flock -n"
+        }
+      ]
+    },
+    {
+      "id": "guard",
+      "type": "security",
+      "label": "¿Jellyfin reproduce?",
+      "sublabel": "NowPlayingItem > 0",
+      "tag": "si SÍ → APLAZA",
+      "icon": "security",
+      "stage": 2,
+      "row": 1,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/cam-upload.sh",
+          "line": 12,
+          "label": "lee ApiKey"
+        },
+        {
+          "path": "configs/usr/local/bin/cam-upload.sh",
+          "line": 14,
+          "label": "GET /Sessions"
+        },
+        {
+          "path": "configs/usr/local/bin/cam-upload.sh",
+          "line": 17,
+          "label": "defer → exit 0"
+        }
+      ]
+    },
+    {
+      "id": "drive",
+      "type": "cloud",
+      "label": "Google Drive",
+      "sublabel": "gdrive:Media/Camera",
+      "tag": "retención 30 días",
+      "icon": "cloud",
+      "stage": 2,
+      "row": 3,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/cam-upload.sh",
+          "line": 7,
+          "label": "DST"
+        },
+        {
+          "path": "configs/usr/local/bin/cam-upload.sh",
+          "line": 35,
+          "label": "rclone copy"
+        }
+      ]
+    },
+    {
+      "id": "cronupload",
+      "type": "backend",
+      "label": "cron */15 · rclone",
+      "sublabel": "sin mirar Jellyfin",
+      "tag": "⚠ elude el bloqueo",
+      "icon": "waiting",
+      "stage": 2,
+      "row": 4,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/root-crontab.txt",
+          "line": 3,
+          "label": "sin guard ni lock"
+        }
+      ]
+    },
+    {
+      "id": "prune",
+      "type": "backend",
+      "label": "Poda local",
+      "sublabel": "deja las 5 más nuevas",
+      "tag": "solo con rc=0",
+      "icon": "success",
+      "stage": 3,
+      "row": 0,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/cam-upload.sh",
+          "line": 38,
+          "label": "rc≠0 no poda"
+        },
+        {
+          "path": "configs/usr/local/bin/cam-upload.sh",
+          "line": 43,
+          "label": "tail -n +6"
+        }
+      ]
+    },
+    {
+      "id": "gcdrive",
+      "type": "backend",
+      "label": "GC de Drive",
+      "sublabel": "cron 03:45 · >30 d",
+      "tag": "rclone delete",
+      "icon": "clock",
+      "stage": 3,
+      "row": 1,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/etc/cron.d/arr-cam-clean",
+          "line": 2,
+          "label": "45 3 * * *"
+        }
+      ]
+    },
+    {
+      "id": "scan",
+      "type": "backend",
+      "label": "cam-library-scan.sh",
+      "sublabel": "refresh solo «Camara»",
+      "tag": "⚠ sin cron en repo",
+      "icon": "waiting",
+      "stage": 3,
+      "row": 2,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/cam-library-scan.sh",
+          "line": 12,
+          "label": "POST /Items/<id>/Refresh"
+        },
+        {
+          "path": "collect.sh",
+          "line": 34,
+          "label": "falta arr-cam-scan"
+        }
+      ]
+    },
+    {
+      "id": "jflib",
+      "type": "frontend",
+      "label": "Biblioteca «Camara»",
+      "sublabel": "el historial",
+      "tag": "en Jellyfin",
+      "icon": "frontend",
+      "stage": 3,
+      "row": 3,
+      "width": 152,
+      "sources": [
+        {
+          "path": "configs/usr/local/bin/cam-library-scan.sh",
+          "line": 9,
+          "label": "busca la carpeta Camara"
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "f-cam-motion",
+      "from": "camip",
+      "to": "motion",
+      "label": "RTSP continuo",
+      "route": "straight",
+      "labelAt": [
+        100,
+        214
+      ]
+    },
+    {
+      "id": "f-motion-notify",
+      "from": "motion",
+      "to": "notify",
+      "label": "inicio de evento",
+      "route": "straight",
+      "labelAt": [
+        100,
+        328
+      ]
+    },
+    {
+      "id": "f-notify-grab",
+      "from": "notify",
+      "to": "framegrab",
+      "label": "pide un frame",
+      "route": "straight",
+      "labelAt": [
+        100,
+        442
+      ]
+    },
+    {
+      "id": "f-grab-ntfy",
+      "from": "framegrab",
+      "to": "ntfy",
+      "label": "alerta.jpg",
+      "route": "straight",
+      "labelAt": [
+        100,
+        556
+      ]
+    },
+    {
+      "id": "f-motion-ext",
+      "from": "motion",
+      "to": "extpipe",
+      "label": "mientras graba",
+      "labelAt": [
+        207.5,
+        214
+      ]
+    },
+    {
+      "id": "f-ext-movie",
+      "from": "extpipe",
+      "to": "movie",
+      "label": "codifica",
+      "route": "straight",
+      "labelAt": [
+        315,
+        214
+      ]
+    },
+    {
+      "id": "f-movie-clips",
+      "from": "movie",
+      "to": "clips",
+      "label": "30 s + 10 s de cola",
+      "route": "straight",
+      "labelAt": [
+        310,
+        330
+      ]
+    },
+    {
+      "id": "f-clips-upload",
+      "from": "clips",
+      "to": "upload",
+      "label": "clip cerrado",
+      "channelX": 412,
+      "labelAt": [
+        378,
+        214
+      ]
+    },
+    {
+      "id": "f-defer",
+      "from": "upload",
+      "to": "clips",
+      "label": "aplaza",
+      "variant": "dashed",
+      "channelX": 430,
+      "labelAt": [
+        383,
+        442
+      ]
+    },
+    {
+      "id": "f-upload-guard",
+      "from": "upload",
+      "to": "guard",
+      "label": "pregunta primero",
+      "variant": "security",
+      "route": "straight",
+      "labelAt": [
+        530,
+        214
+      ]
+    },
+    {
+      "id": "f-guard-drive",
+      "from": "guard",
+      "to": "drive",
+      "label": "NO: portada + rclone copy",
+      "labelAt": [
+        530,
+        385
+      ]
+    },
+    {
+      "id": "f-clips-cron",
+      "from": "clips",
+      "to": "cronupload",
+      "label": "cada 15 min",
+      "variant": "dashed",
+      "channelX": 448,
+      "labelAt": [
+        440,
+        556
+      ]
+    },
+    {
+      "id": "f-cron-drive",
+      "from": "cronupload",
+      "to": "drive",
+      "label": "sin mirar Jellyfin",
+      "variant": "dashed",
+      "route": "straight",
+      "labelAt": [
+        530,
+        556
+      ]
+    },
+    {
+      "id": "f-drive-prune",
+      "from": "drive",
+      "to": "prune",
+      "label": "rc=0 ⇒ podar",
+      "channelX": 612,
+      "labelAt": [
+        640,
+        556
+      ]
+    },
+    {
+      "id": "f-drive-gc",
+      "from": "drive",
+      "to": "gcdrive",
+      "label": ">30 días",
+      "channelX": 626,
+      "labelAt": [
+        700,
+        442
+      ]
+    },
+    {
+      "id": "f-drive-jflib",
+      "from": "drive",
+      "to": "jflib",
+      "label": "local + Drive",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        740,
+        556
+      ]
+    },
+    {
+      "id": "f-scan-jflib",
+      "from": "scan",
+      "to": "jflib",
+      "label": "refresh",
+      "route": "straight",
+      "labelAt": [
+        758,
+        442
+      ]
+    },
+    {
+      "id": "f-prune-clips",
+      "from": "prune",
+      "to": "upload",
+      "label": "borra desde la 6ª",
+      "variant": "dashed",
+      "channelX": 640,
+      "labelAt": [
+        640,
+        100
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "La regla: la subida nunca compite con el streaming",
+      "items": [
+        "cam-upload.sh lee la primera ApiKey de /var/lib/jellyfin/data/jellyfin.db y pregunta GET /Sessions (línea 12-14).",
+        "Si hay alguna sesión con NowPlayingItem, escribe «defer» en el log y sale con exit 0 (línea 17-20): no sube el vídeo, no genera miniatura y no poda.",
+        "El postpone ocurre antes del flock y antes de generar la portada (líneas 24-32): aplazar también aplaza la miniatura."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "⚠ El cron de */15 no respeta esa regla",
+      "items": [
+        "root-crontab.txt:3 copia /data/media/Camera → gdrive:Media/Camera cada 15 minutos con --max-age 5m.",
+        "Esa línea no consulta Jellyfin, no toma /run/cam-upload.lock y no genera portada: es un segundo uploader, independiente del bloqueo.",
+        "Consecuencia honesta: un clip cerrado acaba en Drive en 15 minutos aunque alguien esté viendo una película en casa."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Aplazar no es encolar",
+      "items": [
+        "El defer es un exit 0 sin temporizador ni cola: nada recuerda el clip pendiente (cam-upload.sh:19).",
+        "Se recupera con el siguiente on_movie_end, con el cron */15 (que sí sube sin mirar) o a mano.",
+        "Lo que sí está garantizado: la poda no toca los aplazados, porque solo corre tras un rclone con rc=0 (línea 38)."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Dos rutas y un union mergerfs",
+      "items": [
+        "Motion escribe en /data/media/Camera (motion.conf:39), que es un mergerfs de /data/local:/data/remote (mount-gdrive.sh:62).",
+        "cam-upload.sh lee /data/local/Camera directamente (línea 6): la rama local del union, no el union.",
+        "Funciona porque category.create=ff manda los ficheros nuevos a la primera rama. Si un clip acabara en la rama de Drive, cam-upload.sh no lo vería."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "El push se degrada en tres escalones",
+      "items": [
+        "1) frame fresco del RTSP con 8 s de límite; 2) /var/www/cam/snapshot.jpg, de hasta un minuto; 3) solo texto (cam-notify.sh:34-40).",
+        "El snapshot lo hace un cron de un minuto (cam-snapshot.sh), porque motion tiene picture_output off (motion.conf:40). Si ese frame falla, no se borra el anterior.",
+        "Cooldown de 5 minutos: una ráfaga de eventos genera un solo push (línea 20-21). Sin EZARR_NTFY_URL no hay aviso ni error (línea 13-17)."
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "La URL de la cámara tiene una sola fuente",
+      "items": [
+        "motion no expande variables, así que cam-conf.sh compone la URL desde /etc/ezarr/ y la escribe en motion.conf en cada arranque (cam-conf.sh:33, arr-stack:176).",
+        "Los scripts leen /etc/ezarr/camera.conf directamente. Editar la IP a mano en motion.conf se pierde al reiniciar."
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Lo que este repo no deja ver",
+      "items": [
+        "cam-library-scan.sh no tiene ningún disparador recolectado: collect.sh:34 espera /etc/cron.d/arr-cam-scan y ese fichero no está en el repo.",
+        "La ruta real de la biblioteca «Camara» vive en la base de datos de Jellyfin, no en configs/etc/jellyfin.",
+        "motion.conf:1 sigue diciendo «rclone copy cada 15 min»: describe el cron, no el on_movie_end que se añadió después."
+      ]
+    }
+  ]
+}

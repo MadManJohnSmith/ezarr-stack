@@ -26,7 +26,7 @@ printf '\nsmoke tests — ezarr-stack-build\n\n'
 
 # --------------------------------------------------------------- sintaxis ---
 printf 'sintaxis bash\n'
-for f in "$ROOT"/ezarr.sh "$ROOT"/ezarrctl "$ROOT"/lib/*.sh "$ROOT"/tests/*.sh; do
+for f in "$ROOT"/ezarr.sh "$ROOT"/ezarrctl "$ROOT"/arr-stack "$ROOT"/lib/*.sh "$ROOT"/tests/*.sh; do
     if bash -n "$f" 2>/dev/null; then
         ok "bash -n $(basename "$f")"
     else
@@ -36,7 +36,7 @@ done
 
 # ------------------------------------------------------------- permisos ------
 printf '\npermisos\n'
-for f in ezarr.sh ezarrctl; do
+for f in ezarr.sh ezarrctl arr-stack; do
     [ -x "$ROOT/$f" ] && ok "$f es ejecutable" || bad "$f no es ejecutable"
 done
 # Nada en un repo publico debe traer permisos de escritura para todos.
@@ -162,6 +162,14 @@ STUB="$(mktemp -d)"; mkdir -p "$STUB/etc" "$STUB/var"
 SENTINEL="$STUB/etc/ezarr.conf"; printf 'sin tocar\n' > "$SENTINEL"
 before="$(tree_hash "$STUB")"
 
+# Un plan con los componentes de descarga solo es valido si hay sha256 definidos:
+# sin ellos plan_descargas lo declara invalido (codigo 6, el mismo que daria el
+# install real). Se generan aqui y no se escriben en el fichero a proposito, porque
+# un literal de 64 hex en el repositorio lo marca el test de secretos de abajo.
+SUMA_FALSA="$(printf '%064d' 0)"
+export EZARR_SHA256_arr="$SUMA_FALSA" EZARR_SHA256_subs="$SUMA_FALSA"
+export EZARR_SHA256_downloads="$SUMA_FALSA" EZARR_SHA256_search="$SUMA_FALSA"
+
 "$ROOT/ezarr.sh" --dry-run --all --data-root "$STUB/var/datos" --set "EZARR_STATE_DIR=$STUB/var/estado" >/dev/null 2>&1
 rc=$?
 after="$(tree_hash "$STUB")"
@@ -181,6 +189,13 @@ got="$("$ROOT/ezarr.sh" --dry-run --all 2>&1 | grep -c 'dry-run:' || true)"
 EZARR_NET_TIMEOUT=1 https_proxy=http://127.0.0.1:1 http_proxy=http://127.0.0.1:1 \
     "$ROOT/ezarr.sh" --dry-run --profile minimal >/dev/null 2>&1
 run "--dry-run sale 5 si no hay red (igual que el install real)" "$?" "5"
+
+# Y al reves con los sha256: sin ellos el plan NO es valido, y sale con el mismo
+# 6 que daria el instalador real al llegar al paso 5. Con un aviso y un 0, el
+# dry-run declaraba bueno un plan que despues se rechazaba.
+( unset EZARR_SHA256_arr EZARR_SHA256_subs EZARR_SHA256_downloads EZARR_SHA256_search
+  "$ROOT/ezarr.sh" --dry-run --profile standard >/dev/null 2>&1 )
+run "--dry-run sale 6 si faltan los sha256 (igual que el install real)" "$?" "6"
 
 rm -rf "$TMPD" "$STUB" 2>/dev/null || true
 
@@ -325,18 +340,13 @@ rm -rf "$CFGDIR"
 
 # ------------------------------------------------------------ idempotencia --
 # El instalador tiene que poder correrse dos veces sin romper nada. Se monta un
-# arbol de prueba con un arr-stack de mentira, se instala dos veces y se comparan
+# arbol de prueba VACIO (nada de stubs: si apply_scripts dejara de copiar
+# arr-stack, el stub taparia justo ese fallo), se instala dos veces y se comparan
 # los dos RESULTADOS. No se compara el codigo de salida (el segundo dice "sin
 # cambios", que es lo correcto y no es un fallo).
 printf '\nel instalador es idempotente\n'
 IDEM="$(mktemp -d)"
 mkdir -p "$IDEM/bin"
-cat > "$IDEM/bin/arr-stack" <<'STUB'
-#!/bin/bash
-echo "stub arr-stack $*"
-exit 0
-STUB
-chmod 0755 "$IDEM/bin/arr-stack"
 
 idem_run() {
     env EZARR_CONF_DIR="$IDEM/etc/ezarr" \
@@ -375,6 +385,58 @@ idem_run >/dev/null 2>&1
 grep -q 'mi valor' "$IDEM/etc/ezarr/ezarr.conf" \
     && ok "no sobrescribe la configuracion editada a mano" \
     || bad "el instalador pisa la configuracion del usuario"
+
+# ---------------------------------------------------- arr-stack se instala ---
+# Este test existe por un bug real. plan_scripts anunciaba "+ $EZARR_BIN_DIR/
+# (arr-stack, ezarrctl y vigilantes)" y apply_scripts solo copiaba ezarrctl y
+# ezarr.sh: arr-stack no existia en el repo ni se generaba, y el paso 7 (que lo
+# exige para arrancar) fallaba con codigo 3 siempre. El plan era valido.
+#
+# Arranca de un arbol VACIO, sin inyectar ningun stub: un stub en
+# $EZARR_BIN_DIR taparia justo el fallo que se quiere ver, porque apply_scripts
+# lo sobreescribiria y el test pasaria con el binario real ausente del repo.
+printf '\narr-stack se instala de verdad\n'
+BIN="$(mktemp -d)"
+env EZARR_CONF_DIR="$BIN/etc/ezarr" \
+    EZARR_STATE_DIR="$BIN/var/estado" \
+    EZARR_LOG_DIR="$BIN/var/log" \
+    EZARR_BACKUP_DIR="$BIN/var/backups" \
+    EZARR_BIN_DIR="$BIN/bin" \
+    EZARR_STACK_BIN="$BIN/bin/arr-stack" \
+    EZARR_DATA_ROOT="$BIN/datos" \
+    EZARR_OFFLINE=1 \
+    "$ROOT/ezarr.sh" --only core --yes >/dev/null 2>&1
+
+if [ -f "$BIN/bin/arr-stack" ]; then
+    ok "arr-stack existe tras instalar"
+else
+    bad "arr-stack NO existe tras instalar" "falta $BIN/bin/arr-stack"
+fi
+if [ -x "$BIN/bin/arr-stack" ]; then
+    ok "arr-stack queda ejecutable"
+else
+    bad "arr-stack no queda ejecutable" "modo $(stat -c '%a' "$BIN/bin/arr-stack" 2>/dev/null || echo '?')"
+fi
+if [ -f "$BIN/bin/arr-stack" ] && cmp -s "$ROOT/arr-stack" "$BIN/bin/arr-stack"; then
+    ok "el arr-stack instalado es el del repo, no un sustituto"
+else
+    bad "el arr-stack instalado no es el del repo" "difiere de $ROOT/arr-stack"
+fi
+# Y que de verdad sea el gestor: una llamada suya no puede ser un "not found".
+if [ -x "$BIN/bin/arr-stack" ] && "$BIN/bin/arr-stack" list >/dev/null 2>&1; then
+    ok "el arr-stack instalado responde"
+else
+    bad "el arr-stack instalado no responde" "arr-stack list devolvio error"
+fi
+# El registro de componentes lo leen ezarrctl y apply_activar: tiene que estar
+# en $EZARR_STATE_DIR, que por defecto no es $EZARR_CONF_DIR.
+if [ -s "$BIN/var/estado/components.list" ]; then
+    ok "components.list queda en \$EZARR_STATE_DIR"
+else
+    bad "components.list no esta en \$EZARR_STATE_DIR" \
+        "no existe $BIN/var/estado/components.list"
+fi
+rm -rf "$BIN" 2>/dev/null || true
 
 rm -rf "$IDEM" 2>/dev/null || true
 

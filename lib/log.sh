@@ -92,8 +92,12 @@ log_info() { [ "$EZARR_VERBOSITY" -ge 1 ] && _emit "$EZARR_C_DIM" "  " "$*" || t
 # En dry-run se muestran tambien con el nivel normal: es el UNICO momento en que
 # esta bien ver cada operacion prevista, porque es cuando no se ejecuta nada.
 # Por eso el dry-run no necesita -v para ser util.
+# Pero el nivel manda igual: con -q (verbosidad 0) el dry-run tambien calla. Sin
+# esta segunda condicion, `ezarr.sh --dry-run -q` imprimia cada operacion, que es
+# justo lo que -q pide que no haga.
 log_v() {
-    if [ "$EZARR_VERBOSITY" -ge 2 ] || [ "${EZARR_DRY_RUN:-0}" = "1" ]; then
+    if [ "$EZARR_VERBOSITY" -ge 2 ] \
+    || { [ "${EZARR_DRY_RUN:-0}" = "1" ] && [ "$EZARR_VERBOSITY" -ge 1 ]; }; then
         _emit "${EZARR_C_BLUE}" "   " "$*"
     fi
     return 0

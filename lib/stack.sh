@@ -71,7 +71,11 @@ ezarr_service_state() {
     [ -n "$pat" ] || { echo unknown; return 1; }
     if ! pgrep -f "$pat" >/dev/null 2>&1; then echo dead; return 1; fi
     port="$(ezarr_service_field "$svc" 3)"
-    case "$port" in -|''|'80,443'|'41641'|'7844') echo ok; return 0 ;; esac
+    # Solo se saltan los puertos sin numero real (cron, redis, avahi) y nginx,
+    # que responde en 80/443 y se comprueba por su cuenta. tailscale (41641) y
+    # cloudflared (7844) tambien se comprueban: decir "ok" solo porque el proceso
+    # existe hacia que un tunel caido pasa por sano.
+    case "$port" in -|''|'80,443') echo ok; return 0 ;; esac
     if ezarr_port_open 127.0.0.1 "$port"; then echo ok; return 0; fi
     echo port-closed; return 1
 }
@@ -107,7 +111,86 @@ ezarr_service_action() {  # <start|stop|restart> <svc>
 # ================================================== PASOS DE INSTALACION =====
 # Cada par plan_/apply_ es puro/mutable respectivamente. Ver lib/plan.sh.
 
+# --- 0. DNS --------------------------------------------------------------
+# En el chroot /etc/resolv.conf es casi siempre un symlink a un fichero que vive
+# bajo /run. Ese /run es el del host en el momento del arranque: en cuanto el
+# host reinicia, el destino desaparece y queda un symlink colgante. Sin
+# resolucion de nombres no hay descargas ni proxy inverso, y el fallo sale un
+# paso mas tarde con un mensaje que no lo dice.
+ezarr_resolv_link() {
+    # Lo que hay que tener EN PIE, no lo que hay que escribir.
+    local rc="${1:-/etc/resolv.conf}" tgt
+    if [ -L "$rc" ]; then tgt="$(readlink -f -- "$rc" 2>/dev/null || echo "$rc")"; else tgt="$rc"; fi
+    printf '%s\n' "$tgt"
+}
+
+plan_resolv() {
+    local rc="${EZARR_RESOLV_CONF:-/etc/resolv.conf}" tgt
+    tgt="$(ezarr_resolv_link "$rc")"
+    if [ -s "$rc" ] && [ -r "$rc" ]; then
+        log_info "resolucion de nombres: $rc -> $tgt"
+        return 0
+    fi
+    fs_plan "asegurar $rc (apunta a $tgt y ahi no hay nada)"
+    log_warn "$rc no resuelve: apunta a $tgt y ahi no hay nada"
+    log_warn "sin DNS no hay descargas, ni actualizacion de certificados, ni proxy inverso"
+    return 0
+}
+
+apply_resolv() {
+    local rc="${EZARR_RESOLV_CONF:-/etc/resolv.conf}" ns body n
+    if [ -s "$rc" ] && [ -r "$rc" ]; then
+        EZARR_STEP_DETAIL_LAST="resolucion de nombres ya utilizable"
+        return 0
+    fi
+    ns="${EZARR_RESOLV_NAMESERVER:-1.1.1.1 9.9.9.9}"
+    body="# Generado por ezarr.sh: el resolv.conf original no era utilizable.
+# Nameserver publicos; cambialos con EZARR_RESOLV_NAMESERVER si tu red lo pide."
+    for n in $ns; do body="$body
+nameserver $n"; done
+    body="$body
+options timeout:2 attempts:2"
+    # Se escribe sobre $rc y no sobre el destino: si es un symlink a
+    # /run/systemd/resolve/stub-resolv.conf, esto regenera ese fichero y deja el
+    # symlink como estaba, que es lo que el resto del sistema espera.
+    fs_write "$rc" "$body" 0644
+    if [ -s "$rc" ]; then
+        log_ok "resolucion de nombres escrita en $rc"
+        EZARR_STEP_DETAIL_LAST="escrito $rc ($(printf '%s' "$ns" | wc -w) nameserver(s))"
+    else
+        log_warn "no se pudo escribir $rc: sin root no hay way"
+        EZARR_STEP_DETAIL_LAST="$rc sin cambios"
+    fi
+    return 0
+}
+
 # --- 1. requisitos -------------------------------------------------------
+# _ezarr_require_tool <herramienta>
+# El instalador llama a estas herramientas sin guarda propia, asi que si faltan
+# el fallo sale con codigo 4 (requisito no satisfecha) y no mas tarde como un
+# error de descarga o de verificacion que no dice lo que pasa.
+_ezarr_require_tool() {
+    have "$1" && return 0
+    ezarr_plan_problem "falta '$1', que el instalador necesita" "${EZARR_EX_CONFLICT:-4}"
+    return 1
+}
+
+# /dev/net/tun. tailscaled solo levanta la VPN en modo tun si el nodo existe, y
+# en el chroot de TWRP /dev es un tmpfs propio que no lo trae. No es un fallo
+# de instalacion (tailscale tambien funciona con --tun=userspace-networking), asi
+# que aqui se avisa y en apply_requisitos se intenta crear.
+_ezarr_tun_preflight() {
+    _ezarr_in_set remote || return 0
+    if [ -c /dev/net/tun ]; then
+        log_info "/dev/net/tun presente"
+        return 0
+    fi
+    fs_plan "crear /dev/net/tun (lo necesita tailscale en modo tun)"
+    log_warn "'remote' esta seleccionado pero no existe /dev/net/tun"
+    log_warn "se creara en este paso; si no es posible, arranca tailscale con --tun=userspace-networking"
+    return 0
+}
+
 plan_requisitos() {
     local problems=0
 
@@ -134,8 +217,24 @@ plan_requisitos() {
         log_warn "la base de datos de Jellyfin y las descargas se quedarian sin sitio"
     fi
 
+    # Dependencias externas. Se usan sin guarda en varios sitios (pgrep para
+    # comprobar que un servicio vive, sha256sum para verificar una release,
+    # curl/wget para bajarla), asi que su ausencia tiene que salir aqui y no
+    # como un fallo raro en el paso 5 con el mensaje equivocado.
+    _ezarr_require_tool pgrep || problems=$((problems + 1))
+    _ezarr_require_tool sha256sum || problems=$((problems + 1))
+    if [ "${EZARR_OFFLINE:-0}" != "1" ] && ! have curl && ! have wget; then
+        ezarr_plan_problem "falta curl o wget, y sin --offline hace falta uno de los dos" "${EZARR_EX_CONFLICT:-4}"
+        problems=$((problems + 1))
+    fi
+
+    _ezarr_tun_preflight
+
     if [ "${EZARR_OFFLINE:-0}" != "1" ] && ! ezarr_network_ok; then
         log_error "no hay salida a internet"
+        # env.sh deja el motivo concreto (DNS, TCP o HTTP). "No hay red" a secas
+        # obliga a ir a buscarlo a mano cuando el paso 0 ya lo resolvio.
+        [ -n "${EZARR_NET_WHY:-}" ] && log_error_hint "motivo: ${EZARR_NET_WHY}"
         log_error_hint "conecta el telefono a la red, o usa --offline con la cache ya descargada"
         ezarr_plan_problem "sin red no se pueden descargar los binarios" "${EZARR_EX_NETWORK:-5}"
         problems=$((problems + 1))
@@ -144,7 +243,25 @@ plan_requisitos() {
     [ "$problems" -eq 0 ]
 }
 
-apply_requisitos() { EZARR_STEP_DETAIL_LAST="sin escrituras (comprobacion pura)"; return 0; }
+apply_requisitos() {
+    # /dev/net/tun solo si 'remote' esta elegido y no existe ya. Si mknod falla
+    # (sin root, sin CAP_MKNOD, tmpfs de solo lectura) NO es motivo para parar la
+    # instalacion: tailscale tiene modo userspace. Se dice y se sigue.
+    if _ezarr_in_set remote && [ ! -c /dev/net/tun ]; then
+        fs_mkdir /dev/net
+        if fs_run mknod c 10 200 /dev/net/tun; then
+            log_ok "creado /dev/net/tun"
+            EZARR_STEP_DETAIL_LAST="creado /dev/net/tun"
+        else
+            log_warn "no se pudo crear /dev/net/tun: hace falta root y CAP_MKNOD"
+            log_warn "arranca tailscale con --tun=userspace-networking o el VPN no levantara"
+            EZARR_STEP_DETAIL_LAST="/dev/net/tun no creado (usar --tun=userspace-networking)"
+        fi
+        return 0
+    fi
+    EZARR_STEP_DETAIL_LAST="sin escrituras (comprobacion pura)"
+    return 0
+}
 
 # --- 2. estructura de directorios ---------------------------------------
 ezarr_dirs_list() {
@@ -236,7 +353,12 @@ apply_configuracion() {
 
     local selected
     selected="$(printf '%s\n' "${!EZARR_SET[@]}" | sort)"
-    fs_write "${EZARR_CONF_DIR}"/components.list "$selected" 0644
+    # El registro de lo instalado es ESTADO, no configuracion: va a
+    # $EZARR_STATE_DIR porque es de donde lo leen ezarr_components_load_installed
+    # (abajo) y ezarrctl (ezarrctl, cmd_status). Por defecto /var/lib/ezarr y
+    # /etc/ezarr son directorios distintos, asi que escribirlo en
+    # $EZARR_CONF_DIR lo dejaba invisible para todo el que lo busca.
+    fs_write "${EZARR_STATE_DIR}"/components.list "$selected" 0644
     return 0
 }
 
@@ -323,7 +445,7 @@ apply_paquetes() { fs_apt "$(ezarr_packages_for_components)"; }
 # Los binarios de terceros (Sonarr, Radarr, Prowlarr, Bazarr, FlareSolverr) no se
 # compilan aqui: se descargan de una release firmada y se verifican.
 ezarr_release_url_for() {  # <componente>
-    local base="${EZARR_RELEASE_BASE:-https://releases.stack.example.com}"
+    local base="${EZARR_RELEASE_BASE:-https://packages.example.com}"
     printf '%s/%s-%s_%s.deb' "$base" "$1" "${EZARR_STACK_VERSION:-1.0.0}" "${EZARR_ENV_ARCH}"
 }
 
@@ -343,15 +465,19 @@ plan_descargas() {
         fi
     done
     if [ "$sin_suma" -gt 0 ]; then
-        fs_plan "descargar $sin_suma release(s) BLOQUEADAS: faltan los sha256 en /etc/ezarr/ezarr.conf"
-    else
-        fs_plan "descargar releases con verificacion sha256 previa"
+        # Un aviso no es un fallo: si aqui solo se avisa y se devuelve 0,
+        # --dry-run declara valido un plan que el instalador real va a rechazar
+        # con codigo 6 en el paso 5. Un dry-run que miente no vale como puerta.
+        fs_plan "descargar $sin_suma release(s) BLOQUEADAS: faltan los sha256 en ${EZARR_CONF_DIR}/ezarr.conf"
+        ezarr_plan_problem "faltan los sha256 de $sin_suma release(s): define EZARR_SHA256_<arr|subs|downloads|search> en ${EZARR_CONF_DIR}/ezarr.conf" "${EZARR_EX_VERIFY:-6}"
+        return "${EZARR_EX_VERIFY:-6}"
     fi
+    fs_plan "descargar releases con verificacion sha256 previa"
     return 0
 }
 
 apply_descargas() {
-    local c url dest
+    local c url dest rc=0 r
     for c in arr subs downloads search; do
         [ -n "${EZARR_SET[$c]:-}" ] || continue
         url="$(ezarr_release_url_for "$c")"
@@ -359,8 +485,25 @@ apply_descargas() {
         fs_mkdir "${EZARR_STATE_DIR}/packages"
         # Se descarga a cache y se verifica antes de instalar: una release sin
         # checksum conocido NO se instala. Es exit code 6, no una excepcion.
-        _ezarr_fetch_verify "$url" "$dest" "$c"
+        #
+        # El rc se acumula en una variable y NO se confia en el estado del bucle:
+        # el `for` devuelve el del ULTIMO comando ejecutado, y como las
+        # iteraciones que no aplican terminan en `continue` (que vale 0), un
+        # fallo de descarga se comia solo y apply_descargas acababa en 0.
+        _ezarr_fetch_verify "$url" "$dest" "$c" || { r=$?; [ "$rc" -eq 0 ] && rc="$r"; }
     done
+    return "$rc"
+}
+
+# _ezarr_fetch_fail <operacion>
+# Marca el fallo para la SEGUNDA red de seguridad del plan (EZARR_FS_FAILED, que
+# plan.sh revisa despues del apply) sin inventarse un codigo: el codigo real lo
+# pone quien llama. _fs_fail descuenta la escritura pendiente, asi que se cierra
+# antes: aqui no se ha tocado nada y lo que se escribio antes sigue en pie.
+_ezarr_fetch_fail() {
+    EZARR_FS_PENDING=0
+    _fs_fail "$1"
+    return 0
 }
 
 # _ezarr_fetch_verify <url> <destino> <etiqueta>
@@ -376,24 +519,34 @@ _ezarr_fetch_verify() {
     fi
     if [ -f "$dest" ] && [ -n "$sum" ] && echo "$sum  $dest" | sha256sum -c - >/dev/null 2>&1; then
         log_info "cache valido: $tag"
-    elif [ "${EZARR_OFFLINE:-0}" = "1" ] || [ ! -f "$dest" ]; then
-        have curl || { log_error "falta curl para descargar"; return "${EZARR_EX_NETWORK:-5}"; }
+    elif [ ! -f "$dest" ] && [ "${EZARR_OFFLINE:-0}" != "1" ]; then
+        # Descargar solo si NO hay cache Y no se pidio offline. Con la condicion
+        # al reves (`offline || sin cache`) el caso offline caia aqui: --offline
+        # era justo lo que disparaba la descarga que dice evitar.
+        have curl || { log_error "falta curl para descargar"; _ezarr_fetch_fail "curl ausente para $tag"; return "${EZARR_EX_NETWORK:-5}"; }
         curl -fsSL --retry 3 --retry-delay 2 -o "$dest.part" "$url" || {
             log_error "fallo la descarga de $tag"
-            log_error_hint "comprueba la red o usa --offline con la cache ya descargada"
-            return "${EZARR_EX_NETWORK:-5}"
+            log_error_hint "comprueba la red y reintenta; --offline solo sirve con la cache ya descargada en $dest"
+            _ezarr_fetch_fail "descarga de $tag"; return "${EZARR_EX_NETWORK:-5}"
         }
         mv -f "$dest.part" "$dest"
     fi
+    if [ ! -f "$dest" ]; then
+        # Offline y sin cache: no hay de donde sacar el paquete. Cae en el
+        # codigo de verificacion (6), que es el que el plan ya anuncia.
+        log_error "sin cache para $tag y --offline impide descargarlo"
+        log_error_hint "descarga $url a mano y dejalo en $dest, o quita --offline"
+        _ezarr_fetch_fail "cache ausente para $tag"; return "${EZARR_EX_VERIFY:-6}"
+    fi
     if [ -z "$sum" ]; then
         log_error "no hay checksum definido para $tag (EZARR_SHA256_$tag)"
-        log_error_hint "define EZARR_SHA256_$tag en /etc/ezarr/ezarr.conf antes de instalar"
-        return "${EZARR_EX_VERIFY:-6}"
+        log_error_hint "define EZARR_SHA256_$tag en ${EZARR_CONF_DIR}/ezarr.conf antes de instalar"
+        _ezarr_fetch_fail "sin checksum para $tag"; return "${EZARR_EX_VERIFY:-6}"
     fi
     echo "$sum  $dest" | sha256sum -c - >/dev/null 2>&1 || {
         log_error "checksum incorrecto para $tag"
         log_error_hint "el paquete esta corrupto o la release cambio; no se instala"
-        return "${EZARR_EX_VERIFY:-6}"
+        _ezarr_fetch_fail "checksum de $tag"; return "${EZARR_EX_VERIFY:-6}"
     }
     log_ok "$tag verificado (sha256)"
     dpkg -i "$dest" >/dev/null 2>&1 || log_warn "dpkg -i $tag devolvio error; revisa: dpkg -i $dest"
@@ -413,7 +566,11 @@ apply_activar() {
     local stack="${EZARR_STACK_BIN:-/usr/local/bin/arr-stack}"
     if [ ! -x "$stack" ]; then
         log_error "arr-stack no esta instalado; no se pueden activar servicios"
-        log_error_hint "reinstala con: ezarr.sh --only core"
+        # No vale decir "vuelve a instalar": este paso viene DESPUES de
+        # scripts de operacion, que lo copia. Si aqui no esta, el problema es el
+        # repo o el destino, y eso se mira antes de repetir el comando entero.
+        log_error_hint "el paso 'scripts de operacion' lo deja en ${stack}"
+        log_error_hint "comprueba el origen con: git ls-files arr-stack  y que ${EZARR_BIN_DIR} sea escribible"
         return "${EZARR_EX_NOTINST:-3}"
     fi
     fs_run "$stack" start
@@ -468,13 +625,31 @@ ezarr_require_installed() {
 
 # --- 7. mas_scripts ------------------------------------------------------
 plan_scripts() {
-    fs_plan "+ ${EZARR_BIN_DIR}/ (arr-stack, ezarrctl y vigilantes)"
+    # Se anuncia exactamente lo que hay en el repo y lo que se copia abajo. Un
+    # plan que promete algo que apply no instala es la forma mas rapida de que
+    # el paso 7 falle ("arr-stack no esta instalado") siendo el plan valido.
+    local here f
+    here="$(ezarr_repo_root)"
+    for f in arr-stack ezarrctl ezarr.sh; do
+        [ -f "$here/$f" ] || { log_warn "el repo no trae $f: no se podra instalar"; continue; }
+        fs_plan "+ ${EZARR_BIN_DIR}/$f"
+    done
+    # arr-stack sin el cual nada arranca: si falta del checkout, se dice AHORA y
+    # con codigo, no en el paso 7 cuando apply_activar ya no puede hacer nada.
+    if [ ! -f "$here/arr-stack" ]; then
+        ezarr_plan_problem "el repo no trae arr-stack: sin el no hay gestor de servicios" "${EZARR_EX_NOTINST:-3}"
+        return "${EZARR_EX_NOTINST:-3}"
+    fi
     return 0
 }
 
 apply_scripts() {
     local here; here="$(ezarr_repo_root)"
     fs_mkdir "$EZARR_BIN_DIR"
+    # arr-stack es el gestor de servicios y va PRIMERO: es lo que hace que los
+    # demas (ezarrctl, el paso 7) tengan algo que ejecutar. Sin el, una
+    # instalacion se queda sin forma de arrancar o parar nada.
+    [ -f "$here/arr-stack" ] && fs_install -m 0755 "$here/arr-stack" "$EZARR_BIN_DIR/arr-stack"
     [ -f "$here/ezarrctl" ] && fs_install -m 0755 "$here/ezarrctl" "$EZARR_BIN_DIR/ezarrctl"
     [ -f "$here/ezarr.sh" ]  && fs_install -m 0755 "$here/ezarr.sh"  "$EZARR_BIN_DIR/ezarr-stack-install"
     return 0
@@ -497,5 +672,10 @@ apply_estado() {
   \"profile\": \"${EZARR_PROFILE}\",
   \"components\": \"$(printf '%s\\n' "${!EZARR_SET[@]}" | sort | tr '\\n' ' ')\"
 }" 0644
+    # El marcador de entorno se escribe aqui y no antes: es lo que permite que
+    # la siguiente ejecucion sepa si esta en un chroot sin adivinar por PID 1.
+    # Sin el, la deteccion se apoya en una senal que en Android es ambigua.
+    ezarr_write_env_marker \
+        || log_warn "no se pudo escribir ${EZARR_CONF_DIR:-/etc/ezarr}/chroot.marker (hace falta root)"
     return 0
 }

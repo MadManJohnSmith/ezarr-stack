@@ -1,0 +1,197 @@
+name: Validar
+
+# Comprueba que lo que el repo afirma sobre si mismo es cierto, y nada mas.
+#
+# Lo que hay aqui son las tres cosas que README.md, docs/instalacion.md y
+# CHANGELOG.md afirman y que se pueden comprobar en segundos y sin red:
+#
+#   1. Los 10 scripts de bash parsean (`bash -n`). Es la misma lista que
+#      docs/instalacion.md:39-45 imprime como "OK (bash -n)".
+#   2. Los 11 JSON de docs/diagrams/ son JSON valido, y cada HTML que hay ahi
+#      lo declara algun JSON via /meta/output (y al reves: ningun JSON apunta a
+#      un HTML que no exista).
+#   3. El instalador arranca: `ezarr.sh --help` responde, y `--dry-run` con el
+#      perfil `minimal` devuelve el codigo que el README dice que devuelve.
+#
+# Lo que NO hay aqui, a proposito: la suite de contrato. Ya corre en ci.yml
+# contra tests/smoke.sh, y duplicarla aqui seria correr lo mismo dos veces.
+#
+# tests/smoke.sh esta en rojo a proposito y por razones documentadas en
+# ci.yml:8-12 y README.md:18. Este workflow NO lo ejecuta, asi que puede estar
+# verde mientras la suite de contrato sigue en rojo. Que las dos cifras se
+# contradigan (65 en README.md:8 contra 73 reales, segun docs/instalacion.md:50)
+# es justo el tipo de cosa que este workflow no puede arreglar por si solo.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: sintaxis, JSON y arranque del instalador
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 1. bash -n de todos los scripts.
+      #
+      # La lista es explicita y no un `find`: un `find . -name '*.sh'` tambien
+      # entraria por lo que hubiera en docs/, y el fallo seria "se ha colado un
+      # fichero" en lugar de "este script no parsea". Anadir un script al repo
+      # es anadirlo a esta lista a proposito.
+      - name: Sintaxis de los scripts
+        run: |
+          set -euo pipefail
+          scripts=(ezarr.sh ezarrctl arr-stack
+                   lib/components.sh lib/config.sh lib/env.sh lib/log.sh
+                   lib/plan.sh lib/stack.sh
+                   tests/smoke.sh)
+          fail=0
+          for f in "${scripts[@]}"; do
+            printf '%-24s ' "$f"
+            if [ ! -f "$f" ]; then
+              echo "NO EXISTE"
+              fail=1
+            elif bash -n "$f"; then
+              echo "OK"
+            else
+              echo "FALLA bash -n"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
+          echo "${#scripts[@]} scripts con bash -n limpio."
+
+      # 2. Los JSON de diagramas.
+      #
+      # `jq -e .` no es solo "parsear": sale con codigo distinto de 0 tambien
+      # cuando el JSON es valido pero su resultado es `false` o `null`, que es
+      # justo lo que no queremos que se cuele como fichero de diagrama valido.
+      #
+      # No se usa `archify validate` aqui a proposito: exige clonar Archify y,
+      # en dos de los tres diagramas, tambien el checkout de evidencia de
+      # ezarr-config, que es privado. Eso ya lo hace diagrams.yml, que clona
+      # Archify. validate.yml tiene que seguir siendo "rapido, sin secretos",
+      # como pide el encargo.
+      - name: Los JSON de diagramas son validos
+        run: |
+          set -euo pipefail
+          fail=0
+          count=0
+          for f in docs/diagrams/*.json; do
+            count=$((count + 1))
+            printf '%-46s ' "$(basename "$f")"
+            if jq -e . "$f" >/dev/null 2>&1; then
+              echo "JSON valido"
+            else
+              echo "NO ES JSON VALIDO"
+              jq . "$f" 2>&1 | head -3 || true
+              fail=1
+            fi
+          done
+          [ "$count" -gt 0 ] || { echo "::error::No hay JSON en docs/diagrams/"; exit 1; }
+          [ "$fail" -eq 0 ] || exit 1
+          echo "$count JSON validos."
+
+      # El contrato que de verdad importa entre los JSON y los HTML: cada
+      # /meta/output apunta a un fichero que existe, y ningun HTML de
+      # docs/diagrams/ se ha quedado sin JSON que lo declare.
+      #
+      # Lo segundo es lo que detecta un diagrama que alguien renderizo a mano y
+      # luego renombro. El nombre del HTML no se deduce del nombre del JSON:
+      # ciclo-vigilancia-respaldo.html viene de ciclo-vigilancia-respaldo
+      # .lifecycle.json, asi que cualquier regla "nombre del JSON + .html" crea
+      # un fichero nuevo y deja el viejo sin regenerar, en silencio.
+      - name: Cada diagrama declara un HTML que existe, y al reves
+        run: |
+          set -euo pipefail
+          fail=0
+          declared=$(for f in docs/diagrams/*.json; do
+                       jq -r '.meta.output // empty' "$f"
+                     done | sed '/^$/d' | sort -u)
+
+          diagrams=0
+          for f in docs/diagrams/*.json; do
+            t=$(jq -r '.diagram_type // empty' "$f")
+            [ -n "$t" ] || continue          # los recibos no son diagramas
+            diagrams=$((diagrams + 1))
+            out=$(jq -r '.meta.output // empty' "$f")
+            printf '%-14s %-46s ' "$t" "$(basename "$f")"
+            if [ -z "$out" ]; then
+              echo "no declara /meta/output"
+              fail=1
+            elif [ -f "$out" ]; then
+              echo "-> $out existe"
+            else
+              echo "-> $out NO EXISTE"
+              fail=1
+            fi
+          done
+
+          for h in docs/diagrams/*.html; do
+            if ! grep -qxF "$h" <<< "$declared"; then
+              echo "HTML huerfano (ningun JSON lo declara): $h"
+              fail=1
+            fi
+          done
+
+          [ "$diagrams" -eq 3 ] || { echo "::error::Se esperaban 3 diagramas fuente y hay $diagrams"; exit 1; }
+          [ "$fail" -eq 0 ] || exit 1
+          echo "$diagrams diagramas, todos con HTML y sin huerfanos."
+
+      # 3. El instalador arranca.
+      #
+      # `--dry-run` a pelo NO se usa, y no por capricho: con el perfil por
+      # defecto (`standard`) sale con codigo 6, porque faltan los sha256 de
+      # arr/subs/downloads (README.md:97-104 lo explica y lo reproduce). Un CI
+      # que exigiera 0 a `--dry-run` a pelo estaria rojo por un fallo ya
+      # documentado y conocido. `minimal` es el perfil que si pasa (exit 0) y el
+      # que el README documenta como instalable.
+      - name: ezarr.sh --help responde
+        run: |
+          set -euo pipefail
+          out=$(./ezarr.sh --help)
+          # No basta con el codigo de salida: un `--help` que imprime una
+          # linea de error y sale 0 colaria el mismo fallo que un `--dry-run`
+          # que sale 6 pero avisa de nada.
+          grep -q 'USO' <<< "$out" || { echo "::error::La ayuda no contiene la seccion USO"; echo "$out" | head -20; exit 1; }
+          echo "ayuda: $(wc -l <<< "$out") lineas, contiene USO."
+
+      - name: ezarr.sh --dry-run con perfil minimal sale 0
+        run: |
+          set -euo pipefail
+          ./ezarr.sh --dry-run --profile minimal
+          echo "dry-run minimal: codigo 0."
+
+      # El modo JSON es lo que consumen maquinas, no personas. Un --dry-run que
+      # solo funciona con terminal es un --dry-run que no se puede automatizar.
+      - name: ezarr.sh --dry-run --json produce JSON parseable
+        run: |
+          set -euo pipefail
+          out=$(./ezarr.sh --dry-run --only core --json)
+          jq -e '.app and .version and .dry_run == 1 and .components' <<< "$out" >/dev/null \
+            || { echo "::error::La salida --json no tiene la forma esperada"; echo "$out"; exit 1; }
+          echo "JSON del plan: app=$(jq -r .app <<< "$out") version=$(jq -r .version <<< "$out") componentes=$(jq -r '.components | join(",")' <<< "$out")"
+
+      - name: Resumen
+        if: always()
+        run: |
+          echo "### Validar" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo "Comprobado en este run:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`bash -n\` de los 10 scripts" >> "$GITHUB_STEP_SUMMARY"
+          echo "- los 11 JSON de \`docs/diagrams/\` y su contrato con los HTML" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`ezarr.sh --help\`, \`--dry-run --profile minimal\` y \`--dry-run --json\`" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo "Lo que este workflow NO comprueba: \`tests/smoke.sh\` (rojo a" >> "$GITHUB_STEP_SUMMARY"
+          echo "proposito, ver \`ci.yml\`), y el render de los diagramas (ver" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`diagrams.yml\`)." >> "$GITHUB_STEP_SUMMARY"
