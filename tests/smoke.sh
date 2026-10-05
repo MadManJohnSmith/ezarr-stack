@@ -69,7 +69,13 @@ printf '\nningun secreto ni dato real\n'
 ficheros() { grep -rHnI --exclude-dir=.git -e '' "$ROOT" 2>/dev/null || true; }
 
 # 1. Claves de API: *arr, Jellyfin y Bazarr usan 32 hex. SHA-1 y SHA-512, 40 y 64.
-hex="$(ficheros | grep -E '\b[0-9a-f]{32}\b|\b[0-9a-f]{40}\b|\b[0-9a-f]{64}\b' | head -3 || true)"
+# Las excepciones se nombran una por una en vez de ensanchar el patron, porque un
+# hash de fuente no se distingue de una clave por su forma: los sha256 que el
+# HTML generado incrusta viven en docs/diagrams/*.html (artefacto, no fuente), y
+# el pin de commit de Archify (40 hex) esta fijado a proposito en diagrams.yml.
+ficheros_fuente() { grep -rHnI --exclude-dir=.git --exclude='*.html' -e '' "$ROOT" 2>/dev/null || true; }
+hex="$(ficheros_fuente | grep -E '\b[0-9a-f]{32}\b|\b[0-9a-f]{40}\b|\b[0-9a-f]{64}\b' \
+    | grep -vE 'ARCHIFY_REV=' | head -3 || true)"
 if [ -n "$hex" ]; then
     bad "hash/clave con forma de credencial (32/40/64 hex)" \
         "$(printf '%s' "$hex" | cut -d: -f1-2 | tr '\n' ' ')"
@@ -102,13 +108,21 @@ if [ -n "$embeb" ]; then
 else
     ok "ninguna credencial dentro de una URL"
 fi
-# IPs: solo 192.168.1.10 (placeholder) y las que no son de la red local.
+# IPs privadas: la red de ejemplo es 192.168.1.0/24 y dentro se documentan tres
+# valores concretos, no "la subred entera". La lista es cerrada a proposito: si se
+# abriera a 192.168.1.0/24, dejaria pasar sin rechistar la IP real de la camara
+# (.38), la del chroot (.23) o la del router (.1 en el caso de Alan), que es
+# justo lo que esta guarda existe para cazar.
+#   .0  = notacion de subred, en "anuncia 192.168.1.0/24"
+#   .1  = puerta de enlace, el valor por defecto de cualquier ejemplo de router
+#   .10 = host de ejemplo, el que usan los .sample y la documentacion
+PLACEHOLDER_IP='^192\.168\.1\.(0|1|10)$'
 reales="$(grep -rhoE '\b(10|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b' \
-    "$ROOT" --exclude-dir=.git 2>/dev/null | grep -v '^192\.168\.1\.10$' | sort -u || true)"
+    "$ROOT" --exclude-dir=.git 2>/dev/null | grep -vE "$PLACEHOLDER_IP" | sort -u || true)"
 if [ -n "$reales" ]; then
     bad "IPs que no son placeholder" "$(echo "$reales" | tr '\n' ' ')"
 else
-    ok "solo IPs de ejemplo (192.168.1.10)"
+    ok "solo IPs de ejemplo de la red documentada (.0 subred, .1 gateway, .10 host)"
 fi
 
 # ------------------------------------------------------- codigos de salida --
