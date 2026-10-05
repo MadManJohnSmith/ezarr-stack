@@ -355,6 +355,19 @@ fs_apt() {
     done
     [ -z "$faltan" ] && { log_v "todos los paquetes ya instalados"; return 0; }
 
+    # --offline / EZARR_OFFLINE=1 significa "instala lo que puedas SIN red": se
+    # sigue con el resto del plan y se dice en voz alta que paquetes quedan
+    # sin instalar. Antes este caso solo miraba el flag --offline de la linea de
+    # ordenes, asi que la variable de entorno se ignoraba: en un runner donde
+    # los paquetes base no estan (CI, contenedor limpio) el instalador intentaba
+    # apt-get, fallaba y abortaba con 1 en vez de instalar lo que si dependia de
+    # el. Los dos caminos llegan aqui: el flag pone EZARR_OFFLINE=1 en el shell,
+    # y el entorno la exporta. Leer la variable cubre ambos.
+    if [ "${EZARR_OFFLINE:-0}" = "1" ]; then
+        log_info "modo offline: no se instalan paquetes; faltan:$faltan"
+        return 0
+    fi
+
     tool="$(tool_path apt-get)" || { log_warn "apt-get no disponible: no se instalan ($faltan)"; return 0; }
     _fsim "apt-get install -y $(printf '%s' "$faltan" | xargs)"
     [ "$EZARR_DRY_RUN" = "1" ] && return 0
