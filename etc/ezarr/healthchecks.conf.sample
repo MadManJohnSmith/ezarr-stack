@@ -1,0 +1,14 @@
+# /etc/ezarr/healthchecks.conf — dead-man switch. Vacio = apagado.
+#
+# El watchdog da "ping" a esta URL cada vez que comprueba que todo va bien. Si
+# deja de darla durante mas del margen que configures en Healthchecks.io,
+# Healthchecks.io te avisa a TI. Es la unica forma de enterarte de que el
+# watchdog ha muerto: si el watchdog esta muerto, no puede avisarte.
+#
+# La URL es un token de identificacion: cualquiera que la tenga puede fingir que
+# el servidor esta vivo. No la publiques.
+#
+# OJO: sin /fail. El watchdog anade "/fail" el mismo cuando detecta un fallo.
+# Si lo pones aqui, acabarias con https://.../fail/fail.
+
+EZARR_HC_PING_URL=

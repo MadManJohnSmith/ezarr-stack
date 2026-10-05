@@ -1,0 +1,879 @@
+#!/bin/bash
+# =============================================================================
+#  ezarrctl — el control central del stack ezarr
+# =============================================================================
+#
+#  Este es el comando que se teclea todos los dias. Lo unico que se le pide es
+#  que sea CLARO y VERBOSE: que diga que esta haciendo, que hizo y que fallo,
+#  con codigos de salida correctos. Por eso:
+#
+#    * No hay "todo bien" mudo. Cada linea dice algo accionable.
+#    * Cuando algo falla, sale el codigo que corresponde Y se dice que hacer.
+#    * Las acciones destructivas enumeran lo que van a borrar ANTES de borrar.
+#    * Los timeouts imprimien las ultimas lineas de log en linea: es lo mas
+#      util que puede hacer una herramienta cuando un servicio no arranca.
+#
+#  GESTOR DE SERVICIOS
+#    En un chroot de telefono no hay systemd. ezarrctl lo detecta y usa arr-stack
+#    (arranque directo + pgrep). En una maquina con systemd usa systemctl. Nunca
+#    hace systemctl a ciegas: decide, lo dice, y ejecuta.
+# =============================================================================
+
+set -euo pipefail
+
+EZARR_APP_NAME="ezarrctl"
+EZARR_STACK_VERSION="${EZARR_STACK_VERSION:-1.0.0}"
+EZARR_SELF="$(basename "$0")"
+EZARR_STACK_BIN="${EZARR_STACK_BIN:-/usr/local/bin/arr-stack}"
+
+ezarr_repo_root() {
+    local src="$0" dir
+    while [ -L "$src" ]; do
+        dir="$(cd -P "$(dirname "$src")" && pwd)"
+        src="$(readlink "$src")"
+        [ "${src#/}" = "$src" ] && src="$dir/$src"
+    done
+    cd -P "$(dirname "$src")" && pwd
+}
+EZARR_ROOT="$(ezarr_repo_root)"
+
+# shellcheck source=lib/log.sh
+. "$EZARR_ROOT/lib/log.sh"
+. "$EZARR_ROOT/lib/env.sh"
+. "$EZARR_ROOT/lib/config.sh"
+. "$EZARR_ROOT/lib/components.sh"
+. "$EZARR_ROOT/lib/stack.sh"
+
+# ------------------------------------------------------------- ajustes ------
+WATCH=0
+TIMEOUT=""
+TAIL=100
+FOLLOW=0
+SINCE=""
+COMPONENT=""
+LEVEL=""
+JSON_OUT=0
+FIX=0
+CHECK_ONLY=0
+NO_BACKUP=0
+CHANNEL=""
+KEEP=10
+INCLUDE_DATA=0
+VERIFY=0
+OUTPUT=""
+ASSUME_YES=0
+SERVICES=()
+
+# ================================================================ AYUDA ======
+usage() {
+    cat <<EOF
+${EZARR_C_BOLD}$EZARR_SELF ${EZARR_STACK_VERSION}${EZARR_C_RESET} — control del stack ezarr.
+
+${EZARR_C_BOLD}USO${EZARR_C_RESET}
+  $EZARR_SELF <comando> [opciones]
+
+${EZARR_C_BOLD}COMANDOS${EZARR_C_RESET}
+  status              que esta vivo, que esta parado y por que        (solo lectura)
+  start [servicio...] arrancar uno, varios o todo
+  stop [servicio...]  parar uno, varios o todo
+  restart [servicio..]stop + start, en orden de dependencias, nunca en paralelo
+  logs                registros del stack, con prefijo por linea
+  backup              copia de config, datos y bases de datos, con manifiesto sha256
+  update              actualizar el stack (con backup antes, y doctor al final)
+  doctor              diagnostico: comprobaciones nombradas e independientes
+
+${EZARR_C_BOLD}SALIDAS${EZARR_C_RESET}
+      --json               salida en JSON por stdout (esquema estable)
+      --timeout <dur>      cuanto esperar a un arranque (ej: 60s, 2m)
+      --component <id>     limita la accion a un componente
+  -f, --follow              logs: sigue el fichero en vivo
+  -n, --tail <n>            logs: lineas a mostrar (por defecto 100)
+  -s, --since <dur>         logs: desde hace (1h, 30m, 2d)
+      --level <nivel>       logs: debug|info|warn|error
+      --check               update: solo comprobar, no escribir nada
+      --fix                 doctor: aplicar correcciones seguras
+      --no-backup           update: no hacer copia antes (no recomendado)
+      --keep <n>            backup: cuantos respaldos conservar
+      --include data        backup: incluir tambien los medios
+      --verify              backup: verificar el manifiesto tras crearlo
+      --output <ruta>       backup: directorio de salida
+      --yes                 no pedir confirmacion (sin forma corta, a proposito)
+  -q, --quiet / -v, --verbose / -D, --debug
+      --color <when>        auto | always | never
+
+${EZARR_C_BOLD}CODIGOS DE SALIDA${EZARR_C_RESET}
+$(ezarr_exit_codes_help | tail -n +3 | sed 's/^/  /')
+${EZARR_C_BOLD}EJEMPLOS${EZARR_C_RESET}
+  $EZARR_SELF status                 estado completo, con el porque de cada cosa
+  $EZARR_SELF doctor                 por que algo no funciona
+  $EZARR_SELF restart jellyfin       reinicia solo Jellyfin
+  $EZARR_SELF logs -f --component motion
+  $EZARR_SELF backup --verify --keep 5
+  $EZARR_SELF update --check         que hay nuevo, sin tocar nada
+EOF
+}
+
+usage_error() {
+    log_error "$1"; shift
+    local h; for h in "$@"; do log_error_hint "$h"; done
+    printf '\nUso: %s <comando> [opciones]\n' "$EZARR_SELF" >&2
+    printf "Ejecuta '%s --help' para la ayuda completa.\n" "$EZARR_SELF" >&2
+    ezarr_exit "${EZARR_EX_USAGE:-2}"
+}
+
+parse_common() {
+    ezarr_normalize_args "$@"
+    local -a argv=()
+    argv=(${EZARR_ARGS[@]+"${EZARR_ARGS[@]}"})
+    set -- "${argv[@]}"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --json)     JSON_OUT=1; shift ;;
+            --timeout)  [ $# -ge 2 ] || usage_error "--timeout necesita una duracion (ej: 60s)"; TIMEOUT="$2"; shift 2 ;;
+            --component) [ $# -ge 2 ] || usage_error "--component necesita un id"; COMPONENT="$2"; shift 2 ;;
+            -f|--follow) FOLLOW=1; shift ;;
+            -n|--tail)  [ $# -ge 2 ] || usage_error "--tail necesita un numero"; TAIL="$2"; shift 2 ;;
+            -s|--since) [ $# -ge 2 ] || usage_error "--since necesita una duracion (ej: 1h)"; SINCE="$2"; shift 2 ;;
+            --level)    [ $# -ge 2 ] || usage_error "--level necesita un nivel"; LEVEL="$2"; shift 2 ;;
+            --check)    CHECK_ONLY=1; shift ;;
+            --fix)      FIX=1; shift ;;
+            --no-backup) NO_BACKUP=1; shift ;;
+            --keep)     [ $# -ge 2 ] || usage_error "--keep necesita un numero"; KEEP="$2"; shift 2 ;;
+            --include)  [ $# -ge 2 ] || usage_error "--include necesita 'data'"; [ "$2" = "data" ] || usage_error "--include solo admite 'data'"; INCLUDE_DATA=1; shift 2 ;;
+            --verify)   VERIFY=1; shift ;;
+            --output)   [ $# -ge 2 ] || usage_error "--output necesita una ruta"; OUTPUT="$2"; shift 2 ;;
+            --channel)  [ $# -ge 2 ] || usage_error "--channel necesita un nombre"; CHANNEL="$2"; shift 2 ;;
+            --yes)      ASSUME_YES=1; shift ;;
+            --color)    [ $# -ge 2 ] || usage_error "--color necesita auto|always|never"; export EZARR_COLOR="$2"; shift 2 ;;
+            -q|--quiet) EZARR_VERBOSITY=0; shift ;;
+            -v|--verbose) EZARR_VERBOSITY=$((EZARR_VERBOSITY + 1)); shift ;;
+            -D|--debug) EZARR_VERBOSITY=$((EZARR_VERBOSITY + 2)); shift ;;
+            -h|--help)  usage; ezarr_exit 0 ;;
+            --version)  printf 'ezarrctl %s\n' "$EZARR_STACK_VERSION"; ezarr_exit 0 ;;
+            -*)         usage_error "flag desconocido para este comando: $1" "Ejecuta '$EZARR_SELF --help'." ;;
+            *)          SERVICES+=("$1"); shift ;;
+        esac
+    done
+}
+
+# ======================================================= ABSTRACCION DE SERVICIO
+# Un solo sitio decide como arrancar/parar. El resto del script no sabe si hay
+# systemd o no, y por eso funciona igual en el telefono que en un servidor.
+svc_manager() {
+    if [ "${EZARR_ENV_INIT:-none}" = "systemd" ]; then echo systemd; else echo arr-stack; fi
+}
+
+svc_available() {
+    case "$(svc_manager)" in
+        systemd) have systemctl ;;
+        arr-stack) [ -x "$EZARR_STACK_BIN" ] ;;
+    esac
+}
+
+svc_action() {  # <start|stop|restart> <servicio>
+    local action="$1" svc="$2"
+    case "$(svc_manager)" in
+        systemd)
+            log_v "systemctl $action $svc"
+            systemctl "$action" "$svc" ;;
+        arr-stack)
+            if [ ! -x "$EZARR_STACK_BIN" ]; then
+                log_error "no hay arr-stack en $EZARR_STACK_BIN"
+                log_error_hint "instala el componente 'core': ezarr.sh --only core"
+                return "${EZARR_EX_NOTINST:-3}"
+            fi
+            log_v "$EZARR_STACK_BIN $action $svc"
+            "$EZARR_STACK_BIN" "$action" "$svc" ;;
+    esac
+}
+
+# ------------------------------------------------------------- duracion -----
+# Acepta 60s, 2m, 1h, 30. Sin esto, --timeout 60 seria ambiguo entre segundos
+# y minutos, y el fallo aparece 59 segundos despues: la peor clase de bug.
+parse_duration() {
+    local d="${1:-}" n u
+    [ -n "$d" ] || return 1
+    n="${d%[smhd]}"; u="${d#"$n"}"
+    [ -n "$n" ] || { n="$d"; u=s; }
+    case "$n" in ''|*[!0-9]*) return 1 ;; esac
+    case "$u" in
+        s) echo "$n" ;; m) echo $((n * 60)) ;; h) echo $((n * 3600)) ;; d) echo $((n * 86400)) ;;
+        *) return 1 ;;
+    esac
+}
+
+# ---------------------------------------------------------------- status -----
+cmd_status() {
+    ezarr_detect_env
+    log_step "estado del stack ezarr ${EZARR_STACK_VERSION}"
+    ezarr_env_summary
+    printf '\n' >&2
+
+    local installed="(sin registro)"
+    if [ -r "${EZARR_STATE_DIR}/installed.json" ]; then
+        installed="$(sed -n 's/.*"installed": "\([^"]*\)".*/\1/p' "${EZARR_STATE_DIR}/installed.json" 2>/dev/null || echo '?')"
+    fi
+
+    if ! svc_available; then
+        log_error "el stack no parece instalado: no encuentro el gestor de servicios"
+        log_error_hint "instala con: ezarr.sh --dry-run   y luego   sudo ezarr.sh"
+        return "${EZARR_EX_NOTINST:-3}"
+    fi
+
+    local state_file="${EZARR_STATE_DIR}/components.list"
+    if [ -r "$state_file" ]; then
+        log_info "instalado: $installed · $EZARR_SELECTED_COUNT componente(s)"
+    fi
+    if [ ! -r "$state_file" ]; then
+        # "0 servicios ok" seria verdad y no serviria de nada. Sin el fichero de
+        # estado no hay instalacion, y eso tiene su propio codigo de salida.
+        log_error "el stack no esta instalado"
+        log_error_hint "falta $state_file, que escribe el instalador"
+        log_error_hint "primero mira el plan: sudo ./ezarr.sh --dry-run"
+        log_error_hint "luego instalalo:  sudo ./ezarr.sh"
+        return "${EZARR_EX_NOTINST:-3}"
+    fi
+
+    local svc state pid port desc up=0 down=0 broken=0
+    local services=()
+    if [ "${#SERVICES[@]}" -gt 0 ]; then
+        services=("${SERVICES[@]}")
+    else
+        mapfile -t services < <(ezarr_selected_services)
+    fi
+
+    printf '  %-14s %-8s %-7s %s\n' "SERVICIO" "ESTADO" "PID" "QUE ES" >&2
+    printf '  %-14s %-8s %-7s %s\n' "--------------" "--------" "-------" "---------------------------------" >&2
+
+    local json_svc="" first=1
+    for svc in "${services[@]}"; do
+        state="$(ezarr_service_state "$svc" 2>/dev/null || echo unknown)"
+        pid="$(ezarr_service_pid "$svc" 2>/dev/null || echo '-')"
+        port="$(ezarr_service_field "$svc" 3)"
+        desc="$(ezarr_service_field "$svc" 5)"
+        case "$state" in
+            ok)            printf '  %-14s %-8s %-7s %s\n' "$svc" "ok" "$pid" "$desc" >&2; up=$((up+1)) ;;
+            dead)          printf '  %-14s %-8s %-7s %s\n' "$svc" "parado" "-" "$desc" >&2; down=$((down+1)) ;;
+            port-closed)   printf '  %-14s %-8s %-7s %s\n' "$svc" "ROTO" "$pid" "$desc" >&2
+                           log_info "$svc: el proceso corre pero el puerto $port no responde"
+                           broken=$((broken+1)) ;;
+            *)             printf '  %-14s %-8s %-7s %s\n' "$svc" "?" "-" "$desc" >&2 ;;
+        esac
+        [ "$first" = "1" ] || json_svc+=','
+        first=0
+        json_svc="\"$svc\":{\"state\":\"$state\",\"pid\":\"$pid\",\"port\":\"$port\"}"
+    done
+
+    if [ "$JSON_OUT" = "1" ]; then
+        printf '{"stack":"ezarr","version":"%s","env":"%s","up":%s,"down":%s,"broken":%s,"services":{%s}}\n' \
+            "$EZARR_STACK_VERSION" "$EZARR_ENV_KIND" "$up" "$down" "$broken" "$json_svc"
+    fi
+
+    printf '\n' >&2
+    if [ "$broken" -gt 0 ]; then
+        log_warn "$up ok · $down parado · $broken roto (proceso vivo sin puerto)"
+        log_info "diagnostico: $EZARR_SELF doctor"
+        return "${EZARR_EX_FAIL:-1}"
+    fi
+    if [ "$down" -gt 0 ]; then
+        log_warn "$up ok · $down parado"
+        return "${EZARR_EX_FAIL:-1}"
+    fi
+    log_ok "$up servicios ok"
+    return 0
+}
+
+# -------------------------------------------------------- start/stop/restart -
+# restart = stop + start SECUENCIAL por componente. Jamas en paralelo: el orden
+# de arranque lo define el DAG (el panel depende de los *arr, los *arr del
+# indiceador, y asi). En paralelo se producirian errores que parecen bugs.
+cmd_lifecycle() {
+    local action="$1"
+    ezarr_detect_env
+    ezarr_require_installed "$action" || return $?
+
+    local services=()
+    if [ "${#SERVICES[@]}" -gt 0 ]; then
+        services=("${SERVICES[@]}")
+    else
+        mapfile -t services < <(ezarr_selected_services)
+    fi
+    [ "${#services[@]}" -gt 0 ] || { log_error "no hay servicios que gestionar"; return "${EZARR_EX_NOTINST:-3}"; }
+
+    local secs; secs="$(parse_duration "${TIMEOUT:-}" 2>/dev/null || echo "")"
+    case "$action" in
+        start)   secs="${secs:-60}" ;;
+        stop)    secs="${secs:-30}" ;;
+        restart) secs="${secs:-60}" ;;
+    esac
+
+    local svc rc=0 changed=0
+    log_step "$action de ${#services[@]} servicio(s), gestor: $(svc_manager)"
+    for svc in "${services[@]}"; do
+        local before; before="$(ezarr_service_state "$svc" 2>/dev/null || echo unknown)"
+        log_step "$svc (antes: $before)"
+        local t0; t0="$(ezarr_elapsed)"
+
+        if svc_action "$action" "$svc"; then
+            # Se espera de verdad. Sin espera, `start` devuelve antes de que el
+            # proceso escuche y el siguiente paso falla por una carrera.
+            if [ "$action" != "stop" ]; then
+                _svc_wait_up "$svc" "$secs" || {
+                    log_error "$svc no levanto en ${secs}s"
+                    _svc_dump_logs "$svc" 20
+                    log_error_hint "mira el log: $EZARR_SELF logs --component $svc"
+                    rc="${EZARR_EX_FAIL:-1}"
+                    changed=$((changed+1))
+                    continue
+                }
+            fi
+            local after; after="$(ezarr_service_state "$svc" 2>/dev/null || echo unknown)"
+            if [ "$action" = "stop" ]; then
+                [ "$after" = "dead" ] && log_ok "$svc parado" || { log_warn "$svc sigue vivo"; rc="${EZARR_EX_FAIL:-1}"; }
+            else
+                [ "$after" = "ok" ] && log_ok "$svc arriba en $(ezarr_elapsed)s" \
+                                  || { log_warn "$svc arriba pero el puerto no responde ($after)"; rc="${EZARR_EX_FAIL:-1}"; }
+            fi
+        else
+            log_error "$svc: fallo al ejecutar $action"
+            rc="${EZARR_EX_FAIL:-1}"
+        fi
+        changed=$((changed+1))
+    done
+
+    printf '\n' >&2
+    if [ "$rc" -eq 0 ]; then
+        log_ok "$action completada: $changed/$((changed)) servicios, $(ezarr_elapsed)s"
+    else
+        log_warn "$action con fallos: $changed servicios intentados"
+        log_info "detalle: $EZARR_SELF doctor"
+    fi
+    return "$rc"
+}
+
+# _svc_wait_up <servicio> <segundos> — espera a que el puerto responda.
+_svc_wait_up() {
+    local svc="$1" secs="$2" waited=0 port state
+    port="$(ezarr_service_field "$svc" 3)"
+    # Sin puerto que comprobar (cron, rclone): basta con que el proceso exista.
+    case "$port" in -|''|'80,443'|'41641'|'7844') ;; *) ;; esac
+    while [ "$waited" -lt "$secs" ]; do
+        state="$(ezarr_service_state "$svc" 2>/dev/null || echo dead)"
+        [ "$state" = "ok" ] && return 0
+        sleep 2; waited=$((waited + 2))
+        [ "$((waited % 10))" -eq 0 ] && log_info "$svc aun levantando... ${waited}s/${secs}s"
+    done
+    return 1
+}
+
+# Lo mas util que puede hacer una herramienta cuando un servicio no arranca:
+# las ultimas lineas de log, EN LINEA. No "consulta el log".
+_svc_dump_logs() {
+    local svc="$1" n="${2:-20}" port f
+    port="$(ezarr_service_field "$svc" 3)"
+    log_info "--- ultimas $n lineas ---"
+    for f in "${EZARR_LOG_DIR}/${svc}.log" "${EZARR_LOG_DIR}/${svc}.log.1" "/var/log/${svc}/${svc}.log"; do
+        if [ -r "$f" ]; then
+            printf '%s\n' "  ($f)" >&2
+            tail -n "$n" "$f" 2>/dev/null | sed 's/^/  | /' >&2
+            return 0
+        fi
+    done
+    log_info "no hay log de $svc en ${EZARR_LOG_DIR}/ ni en /var/log/${svc}/"
+    log_info "prueba: journalctl -u $svc -n $n   (si hay systemd)"
+    return 0
+}
+
+# ------------------------------------------------------------------ logs -----
+cmd_logs() {
+    local since_opts=""
+    # -f implica sin color: el color en un fichero que se mueve a ojo molesta.
+    [ "$FOLLOW" = "1" ] && export EZARR_COLOR=never
+    local since_secs=""
+    [ -n "$SINCE" ] && { since_secs="$(parse_duration "$SINCE" 2>/dev/null)" \
+        || usage_error "--since no entiende '$SINCE'" "usa una duracion: 30m, 2h, 1d"; }
+
+    local files=() svc
+    if [ -n "$COMPONENT" ]; then
+        while IFS= read -r svc; do
+            [ -n "$svc" ] && files+=("${EZARR_LOG_DIR}/${svc}.log")
+        done < <(ezarr_services_for_component "$COMPONENT")
+        [ "${#files[@]}" -gt 0 ] || { log_error "componente desconocido: $COMPONENT"; return "${EZARR_EX_USAGE:-2}"; }
+    else
+        while IFS= read -r svc; do
+            [ -f "${EZARR_LOG_DIR}/${svc}.log" ] && files+=("${EZARR_LOG_DIR}/${svc}.log")
+        done < <(ezarr_selected_services)
+    fi
+
+    # Sin logs por componente, el log general del stack.
+    [ "${#files[@]}" -eq 0 ] && files=("${EZARR_LOG_DIR}/watchdog.log" "${EZARR_LOG_DIR}/ezarr.log")
+
+    local existente=() f
+    for f in "${files[@]}"; do [ -r "$f" ] && existente+=("$f"); done
+
+    if [ "${#existente[@]}" -eq 0 ]; then
+        log_error "no hay logs que mostrar"
+        log_error_hint "directorio esperado: ${EZARR_LOG_DIR}/  (define EZARR_LOG_DIR en /etc/ezarr/ezarr.conf)"
+        return "${EZARR_EX_NOTINST:-3}"
+    fi
+
+    log_step "logs de ${#existente[@]} fichero(s), ultimas $TAIL lineas${since_secs:+, desde hace ${since_secs}s}"
+    for f in "${existente[@]}"; do log_info "$(basename "$f")"; done
+
+    if [ "${#existente[@]}" = "1" ]; then
+        tail -n "$TAIL" "${existente[0]}"
+    else
+        # Multiplexado con prefijo por linea: `api | mensaje`. Sin prefijo no se
+        # puede saber de quien es la linea cuando hay seis servicios escribiendo.
+        printf '%s\n' "${existente[@]}" | while IFS= read -r f; do
+            tail -n "$TAIL" "$f" 2>/dev/null | sed "s|^|$(basename "$f" .log) \| "
+        done
+    fi
+
+    if [ "$FOLLOW" = "1" ]; then
+        log_info "siguiendo (Ctrl-C para salir)"
+        printf '%s\n' "${existente[@]}" | xargs -r tail -n 0 -F
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------- backup -----
+# El unico sitio donde un default destructivo seria imperdonable: por eso
+# --keep N enumera lo que va a borrar ANTES de borrar, y NUNCA se lleva el
+# ultimo respaldo bueno.
+cmd_backup() {
+    local ts; ts="$(date -u '+%Y%m%dT%H%M%SZ')"
+    local dest="${OUTPUT:-${EZARR_BACKUP_DIR}/$ts}"
+    local files=0 bytes=0
+
+    log_step "backup a $dest"
+
+    # --- que se va a incluir: se DICE antes de copiar -------------------------
+    local items=()
+    _add_item() { [ -e "$1" ] && items+=("$1"); return 0; }
+    _add_item /etc/ezarr
+    _add_item "${EZARR_STATE_DIR}"
+    _add_item /usr/local/bin/arr-stack
+    _add_item "${EZARR_DATA_ROOT}/ezarr/config"
+    if [ "$INCLUDE_DATA" = "1" ]; then
+        _add_item "${EZARR_DATA_ROOT}/ezarr/media"
+    fi
+
+    # bases de datos: se vuelcan en texto, no se copian a pelo
+    local dbs=0 db
+    for db in "${EZARR_DATA_ROOT}/ezarr/db"/*.sqlite; do
+        [ -f "$db" ] || continue
+        items+=("$db"); dbs=$((dbs + 1))
+    done
+
+    log_info "incluye: ${#items[@]} ruta(s), $dbs base(s) de datos"
+    [ "$INCLUDE_DATA" = "0" ] && log_info "los medios NO se incluyen (usa --include data; pueden ser cientos de GB)"
+
+    if ! ezarr_confirm "¿Crear el respaldo en $dest?"; then
+        log_info "cancelado: no se ha copiado nada"
+        return 0
+    fi
+
+    ezarr_need_root "crear un respaldo"
+    mkdir -p "$dest" || { log_error "no se pudo crear $dest"; return "${EZARR_EX_FAIL:-1}"; }
+    local rel
+    for rel in "${items[@]}"; do
+        local base; base="$(printf '%s' "$rel" | sed 's|^/||')"
+        mkdir -p "$dest/$base" 2>/dev/null || true
+        if [ -d "$rel" ]; then
+            cp -a "$rel" "$dest/" 2>/dev/null && { files=$((files + 1)); log_v "directorio $rel"; }
+        else
+            cp -a "$rel" "$dest/$base" 2>/dev/null && { files=$((files + 1)); log_v "fichero $rel"; }
+        fi
+    done
+
+    # --- manifiesto: sha256 de todo lo copiado ------------------------------
+    # Sin esto, un restore no puede saber si lo que hay en el tar corrupto.
+    log_step "manifiesto sha256"
+    ( cd "$dest" && find . -type f ! -name manifest.json -print0 \
+        | sort -z | xargs -0 sha256sum > manifest.json 2>/dev/null ) || \
+        log_warn "no se pudo generar el manifiesto completo"
+
+    bytes="$(du -sh "$dest" 2>/dev/null | cut -f1 || echo '?')"
+    log_ok "$files rutas, $bytes en $dest"
+
+    if [ "$VERIFY" = "1" ]; then
+        log_step "verificando el manifiesto"
+        if ( cd "$dest" && sha256sum -c --quiet manifest.json >/dev/null 2>&1 ); then
+            log_ok "manifiesto verificado: todo coincide"
+        else
+            log_error "el manifiesto no verifica: hay ficheros corruptos"
+            log_error_hint "revisa: cd $dest && sha256sum -c manifest.json"
+            return "${EZARR_EX_FAIL:-1}"
+        fi
+    fi
+
+    # --- poda: se ENUMERA lo que se va a borrar, y el ultimo bueno se conserva
+    _prune_backups "$KEEP"
+    return 0
+}
+
+_prune_backups() {
+    local keep="$1"
+    command -v find >/dev/null || return 0
+    local base="${OUTPUT%/*}"
+    [ -n "$base" ] && [ "$base" != "$OUTPUT" ] || base="$EZARR_BACKUP_DIR"
+    [ -d "$base" ] || return 0
+
+    mapfile -t todos < <(find "$base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+    local total="${#todos[@]}"
+    [ "$total" -le "$keep" ] && return 0
+
+    local borrar_n=$((total - keep))
+    # El mas reciente SIEMPRE se queda: un prune que se lleva el ultimo bueno
+    # no es un prune, es una perdida de datos con pasos de cortesia.
+    local ultimo="${todos[$((total - 1))]}"
+    local i victims=()
+    for (( i = 0; i < total - 1; i++ )); do
+        [ "${todos[$i]}" = "$ultimo" ] && continue
+        [ "$((i + 1))" -le "$borrar_n" ] && victims+=("${todos[$i]}")
+    done
+    [ "${#victims[@]}" -eq 0 ] && return 0
+
+    log_step "se van a borrar ${#victims[@]} respaldos antiguos (se conservan $keep, el mas reciente siempre se queda)"
+    local v
+    for v in "${victims[@]}"; do log_info "  - $v"; done
+
+    if ! ezarr_confirm "¿Borrarlos?"; then
+        log_info "conservados: no se borra nada"
+        return 0
+    fi
+    for v in "${victims[@]}"; do
+        rm -rf -- "$v" && log_ok "borrado $v" || log_warn "no se pudo borrar $v"
+    done
+}
+
+# ---------------------------------------------------------------- update -----
+# El ciclo cerrado es lo que separa esto de un juguete: backup antes, update en
+# orden de dependencias, y doctor al final. Si doctor falla, se avisa MUY fuerte.
+cmd_update() {
+    ezarr_detect_env
+    log_step "actualizacion del stack ezarr (canal: ${CHANNEL:-stable})"
+
+    local updater="/usr/local/bin/update-ezarr"
+    if [ -x "$updater" ]; then
+        log_info "usando $updater"
+        "$updater" check || log_warn "el comprobador de versiones devolvio error"
+    else
+        log_warn "no encuentro $updater: no puedo comprobar versiones"
+        log_warn "el stack se actualiza con el gestor de paquetes del sistema, o con el actualizador de ezarr"
+    fi
+
+    if [ "$CHECK_ONLY" = "1" ]; then
+        log_ok "solo comprobacion: no se ha escrito nada"
+        return 0
+    fi
+
+    # --- backup antes, salvo que se diga lo contrario -------------------------
+    if [ "$NO_BACKUP" = "1" ]; then
+        log_warn "--no-backup: sin copia de seguridad previa (un update fallido deja el stack a medias)"
+    else
+        log_step "backup previo"
+        cmd_backup || { log_error "el backup previo fallo: no se actualiza a ciegas"; return "${EZARR_EX_FAIL:-1}"; }
+    fi
+
+    log_step "aplicando actualizaciones"
+    local rc=0
+    if [ -x "$updater" ]; then
+        "$updater" "${CHANNEL:-all}" || { log_error "el actualizador devolvio error"; rc="${EZARR_EX_FAIL:-1}"; }
+    else
+        apt-get update -qq && apt-get upgrade -y -qq || { log_error "apt devolvio error"; rc="${EZARR_EX_FAIL:-1}"; }
+    fi
+
+    # --- doctor al final: el ciclo se cierra aqui, no se cierra con un "OK" ---
+    log_step "verificando con doctor"
+    if cmd_doctor; then
+        log_ok "actualizacion correcta y verificada"
+        return 0
+    fi
+
+    log_error "EL DOCTOR ENCONTRO PROBLEMAS TRAS LA ACTUALIZACION"
+    log_error_hint "el respaldo previo esta en ${EZARR_BACKUP_DIR}/: revisa $EZARR_SELF doctor antes de seguir"
+    log_error_hint "si esta roto, restaura a mano desde el ultimo respaldo; no se hace rollback automatico"
+    log_error "porque un rollback ciego puede pisar datos creados despues del backup"
+    return "${EZARR_EX_FAIL:-1}"
+}
+
+# ---------------------------------------------------------------- doctor -----
+# El central. Comprobaciones nombradas, cada una independiente: nunca se aborta
+# en la primera, porque un solo fallo escondiendo los demas no sirve de nada.
+DOCTOR_PROBLEMS=0
+DOCTOR_WARNINGS=0
+
+cmd_doctor() {
+    ezarr_detect_env
+    DOCTOR_PROBLEMS=0; DOCTOR_WARNINGS=0
+
+    log_step "doctor ezarr ${EZARR_STACK_VERSION}"
+
+    _check_descubrimiento
+    _check_privilegios
+    _check_espacio
+    _check_configuracion
+    _check_servicios
+    _check_puertos
+    _check_healthchecks
+    _check_logs
+
+    printf '\n' >&2
+    if [ "$DOCTOR_PROBLEMS" -gt 0 ] && [ "$FIX" = "1" ]; then
+        _apply_fixes
+        printf '\n' >&2
+        log_info "correcciones aplicadas. Vuelve a comprobar: $EZARR_SELF doctor"
+    fi
+    if [ "$DOCTOR_PROBLEMS" -gt 0 ]; then
+        log_error "$DOCTOR_PROBLEMS problema(s), $DOCTOR_WARNINGS aviso(s)"
+        if [ "$FIX" = "0" ]; then
+            log_info "siguiente: $EZARR_SELF doctor --fix   (solo correcciones seguras y reversibles)"
+        fi
+        return "${EZARR_EX_FAIL:-1}"
+    fi
+    if [ "$DOCTOR_WARNINGS" -gt 0 ]; then
+        log_warn "todo correcto, con $DOCTOR_WARNINGS aviso(s)"
+        return 2
+    fi
+    log_ok "todo correcto"
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# --fix solo hace correcciones SEGURAS y REVERSIBLES, y las ANUNCIA antes.
+# Y hay una cosa que deliberadamente NO hace: matar el proceso que ocupa un
+# puerto. Puede ser otro servicio tuyo. Esa decision es del usuario, y por eso
+# se dice en vez de ejecutarse.
+# ---------------------------------------------------------------------------
+_fixes_aplicadas=0
+_fixes_omitidas=0
+
+_apply_fixes() {
+    log_step "aplicando correcciones seguras"
+
+    # 1) directorio de logs
+    local d="${EZARR_LOG_DIR:-/var/log/arr}"
+    if [ ! -d "$d" ]; then
+        log_info "crear $d"
+        if ezarr_is_root; then
+            mkdir -p "$d" && log_ok "creado $d" || log_warn "no se pudo crear $d"
+            _fixes_aplicadas=$((_fixes_aplicadas + 1))
+        else
+            log_warn "hace falta root para crear $d"
+            log_error_hint "sudo $EZARR_SELF doctor --fix"
+            _fixes_omitidas=$((_fixes_omitidas + 1))
+        fi
+    elif [ ! -w "$d" ]; then
+        log_info "corregir permisos de $d"
+        if ezarr_is_root; then
+            chmod 0755 "$d" && log_ok "permisos de $d: 0755"
+            _fixes_aplicadas=$((_fixes_aplicadas + 1))
+        else
+            _fixes_omitidas=$((_fixes_omitidas + 1))
+        fi
+    fi
+
+    # 2) ficheros de configuracion que falten, desde las plantillas del repo
+    local f base src
+    for f in /etc/ezarr/ezarr.conf /etc/ezarr/apps.conf; do
+        [ -e "$f" ] && continue
+        base="$(basename "$f")"
+        src="${EZARR_ROOT}/etc/ezarr/${base}.sample"
+        if [ ! -r "$src" ]; then
+            log_warn "no hay plantilla $src para crear $f"
+            _fixes_omitidas=$((_fixes_omitidas + 1))
+            continue
+        fi
+        log_info "crear $f desde la plantilla"
+        if ezarr_is_root; then
+            mkdir -p /etc/ezarr
+            install -m 0600 "$src" "$f" && log_ok "creado $f (sin secretos: rellenalo)"
+            _fixes_aplicadas=$((_fixes_aplicadas + 1))
+        else
+            _fixes_omitidas=$((_fixes_omitidas + 1))
+        fi
+    done
+
+    # 3) lo que NO se toca, y se dice explicitamente
+    local svc state
+    while IFS= read -r svc; do
+        [ -n "$svc" ] || continue
+        state="$(ezarr_service_state "$svc" 2>/dev/null || echo unknown)"
+        case "$state" in
+            port-closed)
+                log_warn "$svc corre pero su puerto no responde: NO lo mato"
+                log_error_hint "puede ser otro proceso: ss -tlnp | grep $(ezarr_service_field "$svc" 3)"
+                log_error_hint "si el proceso es tuyo y es lo que quieres: $EZARR_SELF restart $svc"
+                _fixes_omitidas=$((_fixes_omitidas + 1))
+                ;;
+            dead)
+                log_warn "$svc parado: arrancarlo es una decision, no una correccion"
+                log_error_hint "cuando quieras: $EZARR_SELF start $svc"
+                _fixes_omitidas=$((_fixes_omitidas + 1))
+                ;;
+        esac
+    done < <(ezarr_selected_services)
+
+    log_ok "$_fixes_aplicadas correccion(es) aplicada(s), $_fixes_omitidas omitida(s) por seguridad"
+    return 0
+}
+
+# _check <ok|problema|aviso> <nombre> <mensaje> [remedio]
+_check() {
+    local estado="$1" nombre="$2" msg="$3"; shift 3
+    case "$estado" in
+        ok)      [ "$EZARR_VERBOSITY" -ge 1 ] && printf '  %sok%s        %-14s %s\n' "$EZARR_C_GREEN" "$EZARR_C_RESET" "$nombre" "$msg" >&2 ;;
+        problema) printf '  %sproblema%s  %-14s %s\n' "$EZARR_C_RED" "$EZARR_C_RESET" "$nombre" "$msg" >&2
+                  DOCTOR_PROBLEMS=$((DOCTOR_PROBLEMS + 1)) ;;
+        aviso)   printf '  %saviso%s     %-14s %s\n' "$EZARR_C_YELLOW" "$EZARR_C_RESET" "$nombre" "$msg" >&2
+                  DOCTOR_WARNINGS=$((DOCTOR_WARNINGS + 1)) ;;
+    esac
+    local r
+    for r in "$@"; do log_error_hint "$r"; done
+    return 0
+}
+
+_check_descubrimiento() {
+    if [ -x "$EZARR_STACK_BIN" ]; then
+        _check ok descubrimiento "$EZARR_STACK_BIN"
+    else
+        _check problema descubrimiento "no encuentro arr-stack" \
+            "instala el componente core: sudo ezarr.sh --only core"
+    fi
+}
+
+_check_privilegios() {
+    if ezarr_is_root; then
+        _check ok privilegios "root"
+    else
+        _check aviso privilegios "sin root: algunas comprobaciones son parciales" \
+            "para diagnosticar del todo: sudo $EZARR_SELF doctor"
+    fi
+}
+
+_check_espacio() {
+    local libre; libre="$(ezarr_disk_free_mb "${EZARR_DATA_ROOT:-/data}")"
+    if [ "${libre:-0}" -lt 1024 ]; then
+        _check problema espacio "${libre} MB libres en ${EZARR_DATA_ROOT:-/data}" \
+            "libera sitio o cambia la raiz con EZARR_DATA_ROOT"
+    else
+        _check ok espacio "${libre} MB libres en ${EZARR_DATA_ROOT:-/data}"
+    fi
+}
+
+_check_configuracion() {
+    local f faltan=""
+    for f in /etc/ezarr/ezarr.conf /etc/ezarr/apps.conf; do
+        [ -r "$f" ] || faltan="$faltan $f"
+    done
+    if [ -n "$faltan" ]; then
+        _check problema configuracion "faltan:$faltan" \
+            "copia las plantillas: etc/ezarr/*.conf.sample -> /etc/ezarr/"
+    elif [ ! -s /etc/ezarr/apps.conf ]; then
+        _check aviso configuracion "apps.conf vacio: las claves de las apps no estan" \
+            "rellena /etc/ezarr/apps.conf (chmod 600)"
+    else
+        _check ok configuracion "/etc/ezarr/ presente"
+    fi
+}
+
+_check_servicios() {
+    local svc state parados=0 total=0 lista=""
+    while IFS= read -r svc; do
+        [ -n "$svc" ] || continue
+        total=$((total + 1))
+        state="$(ezarr_service_state "$svc" 2>/dev/null || echo unknown)"
+        [ "$state" = "ok" ] || { parados=$((parados + 1)); lista="$lista $svc($state)"; }
+    done < <(ezarr_selected_services)
+    if [ "$total" -eq 0 ]; then
+        _check problema servicios "no hay componentes instalados: falta ${EZARR_STATE_DIR}/components.list" \
+            "instala con: sudo ./ezarr.sh"
+    elif [ "$parados" -eq 0 ]; then
+        _check ok servicios "$total/$total activos"
+    else
+        _check problema servicios "$parados/$total no estan healthy:$lista" \
+            "arranca con: $EZARR_SELF start"
+    fi
+}
+
+_check_puertos() {
+    local svc state
+    while IFS= read -r svc; do
+        [ -n "$svc" ] || continue
+        state="$(ezarr_service_state "$svc" 2>/dev/null || echo unknown)"
+        # Si el proceso corre pero el puerto no responde, _check_servicios ya lo
+        # ha reportado con nombre y pid: no se duplica el mismo fallo.
+        [ "$state" = "port-closed" ] && return 0
+    done < <(ezarr_selected_services)
+    _check ok puertos "sin conflictos en los puertos del stack"
+}
+
+_check_healthchecks() {
+    local hc="${EZARR_HEALTHCHECKS_URL:-${EZARR_HC_PING_URL:-}}"
+    if [ -z "$hc" ]; then
+        _check aviso healthchecks "sin URL: el dead-man switch esta apagado" \
+            "define EZARR_HC_PING_URL en /etc/ezarr/healthchecks.conf"
+    else
+        _check ok healthchecks "configurado"
+    fi
+}
+
+_check_logs() {
+    local d="${EZARR_LOG_DIR:-/var/log/arr}"
+    if [ ! -d "$d" ]; then
+        _check problema logs "$d no existe: los servicios no podran escribir" \
+            "crealo con: sudo mkdir -p $d"
+    elif [ ! -w "$d" ]; then
+        _check problema logs "$d no permite escritura" \
+            "sudo chown root:root $d && sudo chmod 0755 $d"
+    else
+        _check ok logs "$d escribible"
+    fi
+}
+
+# ================================================================ MAIN =======
+main() {
+    # 1a. color antes de parsear (los errores de uso tienen que poder imprimirse)
+    ezarr_log_init
+    local cmd="${1:-}"
+    [ $# -gt 0 ] && shift
+    # 1b. otra vez despues: --color/-v/-q/-f solo se conocen ya parseados.
+    ezarr_log_init
+
+    case "$cmd" in
+        status|start|stop|restart|logs|backup|update|doctor)
+            parse_common "$@"
+            ezarr_conf_defaults
+            ezarr_detect_env
+            EZARR_ASSUME_YES="$ASSUME_YES"
+            # ezarrctl no decide que esta instalado: lo lee. Si no hay
+            # components.list, cada comando lo dira con codigo 3.
+            ezarr_components_load_installed || true
+            case "$cmd" in
+                status)  cmd_status ;;
+                start)   cmd_lifecycle start ;;
+                stop)    cmd_lifecycle stop ;;
+                restart) cmd_lifecycle restart ;;
+                logs)    cmd_logs ;;
+                backup)  cmd_backup ;;
+                update)  cmd_update ;;
+                doctor)  cmd_doctor ;;
+            esac ;;
+        ""|-h|--help|help)
+            usage ;;
+        exit-codes)
+            ezarr_exit_codes_help >&2 ;;
+        version)
+            printf 'ezarrctl %s (%s/%s)\n' "$EZARR_STACK_VERSION" "$(uname -s)" "${EZARR_ENV_ARCH:-$(uname -m)}" ;;
+        *)
+            log_error "comando desconocido: $cmd"
+            log_error_hint "comandos: status start stop restart logs backup update doctor"
+            log_error_hint "o ejecuta '$EZARR_SELF help' para la ayuda completa"
+            ezarr_exit "${EZARR_EX_USAGE:-2}" ;;
+    esac
+}
+
+trap 'echo "" >&2; log_error "interrumpido por el usuario"; ezarr_exit 130' INT TERM
+main "$@"

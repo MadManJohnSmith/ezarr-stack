@@ -1,0 +1,30 @@
+# /etc/ezarr/apps.conf — claves y contrasenas de las aplicaciones.
+#
+# chmod 600. NO se versiona en el repo publico: una clave escrita en un fichero
+# que acaba en un repositorio deja de ser un secreto a partir del momento en
+# que alguien lo clona.
+#
+# Estas variables NO tienen valor por defecto en el codigo. Un script que
+# necesite una y no la encuentre lo dice y sale, en vez de seguir con una
+# llamada que va a fallar mas tarde y mas lejos.
+#
+# Como se llenan:
+#   1. editando este fichero (lo habitual), o
+#   2. por entorno:  EZARR_SONARR_API_KEY=... ./arr-stack start
+#
+# Dónde se Sacan:
+#   Sonarr/Radarr/Prowlarr  Configuracion > General > API Key
+#   Jellyfin                Panel de control > Claves de API
+#   qBittorrent             WebUI > Herramientas > Preferencias (WebUI > Credenciales)
+
+# Claves de API de los servicios *arr (32 hex).
+EZARR_SONARR_API_KEY=
+EZARR_RADARR_API_KEY=
+EZARR_PROWLARR_API_KEY=
+
+# Clave de API de Jellyfin.
+EZARR_JELLYFIN_API_KEY=
+
+# Credenciales de la WebUI de qBittorrent.
+EZARR_QBIT_USER=
+EZARR_QBIT_PASS=

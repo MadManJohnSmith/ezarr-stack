@@ -1,0 +1,12 @@
+# /etc/ezarr/camera.conf — camara IP. chmod 600.
+#
+# Solo se usa si instalas el componente 'camera'. La IP de ejemplo es un
+# placeholder: la tuya va aqui, no en el codigo.
+#
+# Si la URL lleva usuario y contrasena (muchas camaras IP la exigen), la
+# contrasena tambien es un secreto y este fichero NO se versiona. Usa una
+# variable de entorno si no quieres guardarla en disco:
+#   RTSP_URL=... /usr/local/bin/cam-snapshot.sh
+
+RTSP_URL="rtsp://192.168.1.10:8554"
+EZARR_CAMERA_IP="192.168.1.10"

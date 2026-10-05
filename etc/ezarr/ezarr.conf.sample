@@ -1,0 +1,51 @@
+# /etc/ezarr/ezarr.conf — configuracion del stack ezarr.
+#
+# Solo pares NOMBRE=valor. Las lineas que no tengan esa forma se ignoran, y el
+# fichero NO se ejecuta como codigo: se parsea linea a linea. Es la diferencia
+# entre "configurar" y "abrir una puerta" en un fichero que cualquiera con root
+# puede escribir.
+#
+# Precedencia, de menor a mayor:
+#   valor por defecto  <  este fichero  <  ~/.config/ezarr/ezarr.conf
+#                      <  entorno EZARR_*  <  flags del instalador
+#
+# Las IPs de ejemplo son 192.168.1.10 a proposito. La tuya va aqui.
+
+# ------------------------------------------------------------- rutas --------
+# Donde viven los datos. En Android suele ser /data.
+EZARR_DATA_ROOT=/data
+EZARR_STATE_DIR=/var/lib/ezarr
+EZARR_LOG_DIR=/var/log/arr
+EZARR_BACKUP_DIR=/var/backups/ezarr
+EZARR_TIMEZONE=Etc/UTC
+
+# ------------------------------------------------- avisos push (ntfy) --------
+# Servidor y topic. El topic es la parte "secreta": cualquiera que lo adivine
+# puede publicar (o suscribirse) en el. Usa uno largo y aleatorio.
+EZARR_NTFY_SERVER=https://ntfy.sh
+EZARR_NTFY_TOPIC=pon-aqui-tu-topic-largo-y-aleatorio
+
+# ------------------------------------------------------------- camara -------
+# Solo si instalas el componente 'camera'.
+EZARR_CAMERA_RTSP=rtsp://192.168.1.10:8554
+EZARR_CAMERA_IP=192.168.1.10
+
+# --------------------------------------------------- dead-man switch --------
+# URL de ping de Healthchecks.io, SIN la parte /fail. Si el watchdog deja de
+# dar la señal durante mas del margen que tu configures, Healthchecks.io te avisa.
+# Vacio = apagado.
+EZARR_HC_PING_URL=
+
+# ---------------------------------------------- checksums de las releases ---
+# Sin esto el instalador RECHAZA el paquete (codigo de salida 6). Es
+# deliberado: una release sin checksum conocido no se instala.
+EZARR_SHA256_arr=
+EZARR_SHA256_subs=
+EZARR_SHA256_downloads=
+EZARR_SHA256_search=
+
+# ------------------------------------------------------- componentes --------
+# Anadidos o quitados siempre, por encima del perfil que elijas en la linea de
+# comandos. Ejemplo: EZARR_COMPONENTS_EXTRA=camera,remote
+EZARR_COMPONENTS_EXTRA=
+EZARR_COMPONENTS_SKIP=
