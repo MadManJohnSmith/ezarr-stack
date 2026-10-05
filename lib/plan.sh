@@ -25,6 +25,10 @@
 EZARR_DRY_RUN="${EZARR_DRY_RUN:-0}"     # 1 = no mutar nada
 EZARR_FS_ATTEMPTS=0                     # mutaciones pedidas (reales o simuladas)
 EZARR_FS_PERFORMED=0                    # mutaciones realmente ejecutadas
+EZARR_FS_PENDING=0                      # una escritura esta en curso (la cuenta _fsim)
+EZARR_APPLY_ARMED=0                     # 1 = la pasada actual puede aplicar. Lo arma
+                                        # ezarr.sh DESPUES de la confirmacion; mientras
+                                        # valga 0, apply() no se ejecuta.
 EZARR_PLAN_TOTAL=0
 EZARR_PLAN_IDX=0
 EZARR_PLAN_DONE=0
@@ -117,7 +121,14 @@ _ezarr_run_step() {
     [ -n "${EZARR_STEP_DETAIL_LAST:-}" ] && EZARR_STEP_DETAIL[$i]="$EZARR_STEP_DETAIL_LAST"
 
     # --- 2) apply(): aqui y solo aqui se muta ------------------------------
-    if [ "$EZARR_DRY_RUN" = "1" ]; then
+    # DOS puertas, y tienen que estar las dos:
+    #   - --dry-run no aplica nada.
+    #   - EZARR_APPLY_ARMED=0 durante la PRIMERA pasada, la que dibuja el
+    #     resumen que se enseña antes de preguntar. Si aqui se aplicara, el
+    #     instalador instalaria antes de pedir confirmacion y el prompt
+    #     decoraria una instalacion ya hecha. Ver el paso 7 de ezarr.sh, que
+    #     arma la bandera justo despues de que el usuario diga si.
+    if [ "$EZARR_DRY_RUN" = "1" ] || [ "${EZARR_APPLY_ARMED:-0}" != "1" ]; then
         EZARR_STEP_STATE[$i]="planned"
         log_v "dry-run: ${EZARR_STEP_DETAIL[$i]:-sin cambios previstos}"
         return 0
@@ -245,6 +256,7 @@ _fsim() {   # _fsim <descripcion legible>
         return 0
     fi
     EZARR_FS_PERFORMED=$((EZARR_FS_PERFORMED + 1))
+    EZARR_FS_PENDING=1
     log_v "$1"
     return 0
 }
@@ -288,6 +300,17 @@ fs_touch()  { _fsim "touch $*";   [ "$EZARR_DRY_RUN" = "1" ] || touch -- "$@" ||
 EZARR_FS_FAILED=0
 _fs_fail() {
     EZARR_FS_FAILED=1
+    # _fsim ya habia contado esta escritura como hecha. Si la escritura
+    # falla, se descuenta: el contador tiene que responder a "cuanto se toco
+    # de verdad", no a "cuanto se intento". Sin esto, un `mkdir` que acaba en
+    # "Permission denied" sale en el resumen como una escritura hecha.
+    # Un envoltorio llama a _fsim una vez y puede llamar a _fs_fail varias
+    # veces (mkdir, write, chmod), asi que la primera descuenta y las
+    # siguientes no.
+    if [ "${EZARR_FS_PENDING:-0}" = "1" ]; then
+        EZARR_FS_PERFORMED=$((EZARR_FS_PERFORMED - 1))
+        EZARR_FS_PENDING=0
+    fi
     log_error "no se pudo: $1"
     return 0
 }

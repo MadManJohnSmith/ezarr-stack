@@ -283,6 +283,10 @@ main() {
     fi
 
     # --- 8. aplicar -----------------------------------------------------------
+    # Hasta aqui no se habia escrito NADA. La bandera se arma aqui, despues de
+    # que el usuario haya dicho si. Si se armara antes, la primera pasada
+    # (la del resumen) instalaria el stack y el prompt seria decoracion.
+    EZARR_APPLY_ARMED=1
     ezarr_plan_run
     ezarr_fs_assert_clean || ezarr_exit "${EZARR_EX_FAIL:-1}"
 

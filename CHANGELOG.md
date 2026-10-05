@@ -88,9 +88,78 @@ nuevo; no hay migración porque antes no había nada.
 - `etc/ezarr/*.sample` — cuatro plantillas **con placeholders**: la IP de ejemplo
   es `192.168.1.10` y ninguna credencial real está en el repositorio.
   `tests/smoke.sh` lo comprueba y falla si aparece una.
-- `tests/smoke.sh` — 57 comprobaciones, sin dependencias. Incluye la del
+- `tests/smoke.sh` — 65 comprobaciones, sin dependencias. Incluye la del
   dry-run (hash del árbol antes/después) y la de idempotencia (instalar dos
   veces y comparar).
+
+### Corregido — credenciales reales que estaban en el historial
+
+La primera versión del test de secretos buscaba con una lista de valores
+prohibidos escrita dentro del propio test. Una lista así tiene que escribir
+esos valores en el fichero para poder buscarlos, de modo que **el guardián
+era la fuga**: el topic real de ntfy, la contraseña real de qBittorrent, tres
+claves de API reales de Sonarr/Radarr/Bazarr y el nombre real del autor
+estaban en `tests/smoke.sh`, y por tanto en el commit, y por tanto en el
+historial.
+
+Qué se hizo, en este orden:
+
+- El test ya no nombra ningún valor. Comprueba la **forma** de una credencial
+  (un hash de 32/40/64 hex, una asignación con valor, una URL con `user:pass@`)
+  en lugar de una lista de cadenas prohibidas. Es más estricto —no depende de
+  acordarse de qué escribir— y no se puede colar nada por escribirlo.
+- El historial se reescribió (`commit --amend` + `reflog expire` + `gc
+  --prune=now`) y se verificó objeto a objeto: cero coincidencias de las seis
+  cadenas en todo el almacén de objetos.
+- La identidad de git del repositorio es `ezarr-stack-build
+  <noreply@example.com>`, no la global de la máquina, que es el nombre y el
+  correo reales de quien lo mantiene.
+
+Si alguien clonó este repositorio antes de esta corrección, las credenciales
+de arriba deben considerarse comprometidas y rotadas: el topic de ntfy, la
+contraseña de qBittorrent y las tres claves de API.
+
+### Corregido — el instalador instalaba antes de preguntar
+
+Este era el fallo serio, y era invisible en el entorno de pruebas.
+
+`ezarr_plan_run` se ejecuta **dos veces**: la primera dibuja el resumen y la
+segunda aplica. La primera también llamaba a `apply()`, y como la segunda solo
+se lanza después de `ezarr_confirm`, **el stack se instalaba entero antes de
+que se pidiera confirmación**. El prompt decoraba una instalación ya hecha.
+
+En una cuenta sin permisos para `/data` el efecto no se veía —el `mkdir` de
+la estructura de directorios fallaba, el paso se marcaba como problema y la
+ejecución moría ahí por casualidad. Como root, que es como se instala en el
+teléfono, se instalaba.
+
+La puerta es ahora `EZARR_APPLY_ARMED`, que `ezarr.sh` arma después de la
+confirmación. Hay dos pruebas nuevas que lo comprueban, y se comprobaron
+contra el código anterior para verificar que fallan: la estática (la bandera
+se arma en una línea posterior a `ezarr_confirm`) y la dinámica (una
+ejecución real sin `--yes` no produce ni un `no se pudo:`, que era la firma
+del `apply()` ejecutado).
+
+### Corregido — otros
+
+- **`/dev/tty` existente pero no abrible.** La comprobación era `[ -e /dev/tty ]`.
+  En un contenedor el fichero existe y abrirlo falla con *No such device or
+  address*, así que el error de bash crudo se imprimía en mitad del resumen.
+  Ahora se comprueba que se pueda **abrir**, que es la pregunta que importa.
+- **El contador de escrituras contaba intentos.** `_fsim` suma antes de
+  escribir, así que un `mkdir` que acaba en *Permission denied* salía en el
+  resumen como una escritura hecha. `_fs_fail` descuenta, y el resumen
+  distingue "nada se ha modificado" de "N pasos aplicados, M escrituras
+  hechas" — que es la pregunta que un instalador tiene que responder cuando
+  se para a mitad.
+- **La configuración se leía de una ruta fija mientras se escribía en otra.**
+  `EZARR_CONF_FILES` tenía `/etc/ezarr` escrito dentro, pero el instalador
+  escribe en `$EZARR_CONF_DIR`. Con el directorio cambiado, el instalador
+  escribía una configuración que el runtime no leía nunca. La lista sale ahora
+  de la variable, y se reconstruye en cada `ezarr_config_load` para que un
+  `--set EZARR_CONF_DIR=…` posterior al `source` también cuente.
+- **`.gitignore` nuevo.** Los `*.bak-YYYYMMDD` del trabajo en curso se crean
+  antes de sobrescribir, pero no se suben.
 
 ### Decisiones documentadas
 

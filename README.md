@@ -5,7 +5,7 @@ Instalador y control central para un stack de servidores multimedia en un
 en una máquina normal, para preparar imágenes.
 
 > **Lo que esto no garantiza.** El `ezarr.sh` de este repositorio no se ha
-> ejecutado contra un teléfono real. Lo que sí está probado son 57
+> ejecutado contra un teléfono real. Lo que sí está probado son 65
 > comprobaciones de contrato, sintaxis, códigos de salida e idempotencia
 > (`bash tests/smoke.sh`). La configuración que hay detrás —el stack real— lleva
 > meses funcionando en un Poco X3 Pro. La diferencia entre las dos cosas es
@@ -18,7 +18,7 @@ ezarr.sh            instalador de un solo comando, con --dry-run de verdad
 ezarrctl            el control central: status start stop restart logs backup update doctor
 lib/                log.sh  env.sh  config.sh  plan.sh  components.sh  stack.sh
 etc/ezarr/          plantillas de configuración (con placeholders, sin secretos)
-tests/smoke.sh      57 comprobaciones, sin dependencias externas
+tests/smoke.sh      65 comprobaciones, sin dependencias externas
 CHANGELOG.md        qué cambió y por qué
 ```
 

@@ -130,7 +130,15 @@ ezarr_exit() {
                 log_ok "completado: ${EZARR_PLAN_DONE:-0}/${EZARR_PLAN_TOTAL} pasos"
             fi
         else
-            log_warn "interrumpido en el paso ${EZARR_PLAN_IDX:-?}/${EZARR_PLAN_TOTAL}: ${EZARR_PLAN_DONE:-0} pasos aplicados"
+            # Decir "N pasos aplicados" cuando N son pasos de solo lectura
+            # (un preflight, un chequeo de red) hace creer que se instalo algo.
+            # El numero que responde a "¿quedo el sistema tocado?" es el de
+            # escrituras REALES, no el de pasos completados.
+            if [ "${EZARR_FS_PERFORMED:-0}" -eq 0 ]; then
+                log_warn "interrumpido en el paso ${EZARR_PLAN_IDX:-?}/${EZARR_PLAN_TOTAL}: nada se ha modificado"
+            else
+                log_warn "interrumpido en el paso ${EZARR_PLAN_IDX:-?}/${EZARR_PLAN_TOTAL}: ${EZARR_PLAN_DONE:-0} pasos aplicados, ${EZARR_FS_PERFORMED} escrituras hechas"
+            fi
         fi
     fi
     exit "$code"
@@ -195,7 +203,12 @@ ezarr_confirm() {
         _emit "$EZARR_C_GREEN" "OK" "$prompt -> sí (--yes)"
         return 0
     fi
-    if [ ! -e /dev/tty ]; then
+    # OJO: no basta con `[ -e /dev/tty ]`. /dev/tty puede EXISTIR y aun asi no
+    # abrirse: es lo que pasa dentro de un contenedor o de un proceso sin
+    # terminal controladora, donde abrirlo devuelve "No such device or
+    # address" y el read escupe ese error de bash crudo en mitad del resumen.
+    # La pregunta que importa no es si existe, es si se puede ABRIR.
+    if ! ( : < /dev/tty ) 2>/dev/null; then
         log_error "$prompt: no hay terminal para pedir confirmacion"
         log_error_hint "pasa --yes para instalar sin preguntar, o --dry-run para ver el plan"
         ezarr_exit 1
@@ -207,7 +220,7 @@ ezarr_confirm() {
     fi
 
     printf '%s%s [s/N/q] %s' "$EZARR_C_BOLD" "$prompt" "$EZARR_C_RESET" >&2
-    if ! IFS= read -r ans < /dev/tty; then
+    if ! IFS= read -r ans < /dev/tty 2>/dev/null; then
         printf '\n' >&2
         log_error "sin respuesta: abortado sin tocar nada"
         ezarr_exit 1

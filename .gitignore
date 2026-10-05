@@ -1,0 +1,16 @@
+# ezarr-stack-build — lo que NO entra en git
+
+# Backups locales del trabajo en curso: *.bak-YYYYMMDD se crean antes de
+# sobrescribir cualquier fichero y son utiles en la maquina donde se trabaja.
+# En un repositorio publico son ruido: el historial ya guarda la version
+# anterior, y duplicar el arbol solo multiplica la superficie que hay que
+# auditar en busca de secretos.
+*.bak-*
+*.bak
+*.orig
+*.rej
+
+# Editores
+*~
+.*.swp
+.DS_Store

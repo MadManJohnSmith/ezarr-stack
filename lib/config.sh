@@ -26,11 +26,16 @@ EZARR_CONF_DIR="${EZARR_CONF_DIR:-/etc/ezarr}"
 EZARR_CONF_USER="${EZARR_CONF_USER:-${XDG_CONFIG_HOME:-$HOME/.config}/ezarr/ezarr.conf}"
 
 # Ficheros que se cargan en este orden (todos opcionales).
+#
+# Se derivan de EZARR_CONF_DIR y no llevan /etc/ezarr escrito dentro a proposito:
+# el instalador ESCRIBE en $EZARR_CONF_DIR (lib/stack.sh) y aqui se LEE. Si las
+# dos rutas no salieran de la misma variable, una instalacion con el directorio
+# cambiado escribiria una configuracion que nadie leeria nunca.
 EZARR_CONF_FILES=(
-    "/etc/ezarr/ezarr.conf"              # sistema: topics, IPs, red
-    "/etc/ezarr/apps.conf"               # sistema: claves de las apps
-    "/etc/ezarr/healthchecks.conf"       # sistema: dead-man switch
-    "${EZARR_CONF_USER}"                 # usuario: overrides locales
+    "${EZARR_CONF_DIR}/ezarr.conf"        # sistema: topics, IPs, red
+    "${EZARR_CONF_DIR}/apps.conf"         # sistema: claves de las apps
+    "${EZARR_CONF_DIR}/healthchecks.conf" # sistema: dead-man switch
+    "${EZARR_CONF_USER}"                  # usuario: overrides locales
 )
 
 # ------------------------------------------------------- parser sin source --
@@ -73,6 +78,18 @@ _conf_parse_file() {
 ezarr_config_load() {
     EZARR_CONF_LOADED=()
     declare -gA EZARR_ENV_OVERRIDE=()
+
+    # La lista se RECONSTRUYE aqui, no se usa la que se construyo al cargar el
+    # fichero. `--set EZARR_CONF_DIR=/opt/ezarr` se aplica despues de que este
+    # fichero se sourceara; si la lista fuera la del principio, el instalador
+    # escribiria en /opt/ezarr y leeria de /etc/ezarr, que es la mitad del
+    # sistema creyendo que tiene configuracion y sin ella.
+    EZARR_CONF_FILES=(
+        "${EZARR_CONF_DIR}/ezarr.conf"
+        "${EZARR_CONF_DIR}/apps.conf"
+        "${EZARR_CONF_DIR}/healthchecks.conf"
+        "${EZARR_CONF_USER}"
+    )
 
     # 1) entorno: se captura ANTES de leer ficheros. Solo escalares: un array
     #    llamado EZARR_COMPONENTS NO es un override, y expandido dentro de un

@@ -16,10 +16,10 @@ set -uo pipefail
 
 TESTS_DIR="$(cd -P "$(dirname "$0")" && pwd)"
 ROOT="$(cd -P "$TESTS_DIR/.." && pwd)"
-PASS=0; FAIL=0; FAILED_NAMES=()
+N_OK=0; N_FAIL=0; FALL_NAMES=()
 
-ok()   { PASS=$((PASS+1)); printf '  \033[32mok\033[0m      %s\n' "$1"; }
-bad()  { FAIL=$((FAIL+1)); FAILED_NAMES+=("$1"); printf '  \033[31mFALLA\033[0m   %s\n' "$1"; [ -n "${2:-}" ] && printf '           %s\n' "$2"; }
+ok()   { N_OK=$((N_OK+1)); printf '  \033[32mok\033[0m      %s\n' "$1"; }
+bad()  { N_FAIL=$((N_FAIL+1)); FALL_NAMES+=("$1"); printf '  \033[31mFALLA\033[0m   %s\n' "$1"; [ -n "${2:-}" ] && printf '           %s\n' "$2"; }
 run()  { [ "$2" = "$3" ] && ok "$1" || bad "$1" "esperado $3, obtenido $2"; }
 
 printf '\nsmoke tests — ezarr-stack-build\n\n'
@@ -61,7 +61,12 @@ printf '\nningun secreto ni dato real\n'
 #
 # Sin exclusiones: este fichero tampoco contiene credenciales, y si las
 # contuviera el propio test tendria que marcarse a si mismo.
-ficheros() { find "$ROOT" -type f -not -path '*/.git/*' -print0 | xargs -0 grep -Hn 2>/dev/null || true; }
+#
+# Sin xargs a proposito: `find | xargs grep` falla en silencio en algunos
+# entornos (si grep no soporta bien los argumentos que le pasa xargs, se
+# come el resultado y el test pasa sin comprobar nada). grep -r no depende de
+# ese trofeo intermedio.
+ficheros() { grep -rHnI --exclude-dir=.git -e '' "$ROOT" 2>/dev/null || true; }
 
 # 1. Claves de API: *arr, Jellyfin y Bazarr usan 32 hex. SHA-1 y SHA-512, 40 y 64.
 hex="$(ficheros | grep -E '\b[0-9a-f]{32}\b|\b[0-9a-f]{40}\b|\b[0-9a-f]{64}\b' | head -3 || true)"
@@ -74,7 +79,12 @@ fi
 
 # 2. Asignaciones de credencial con valor. El valor tiene que estar vacio,
 #    ser un placeholder declarado o venir de otra variable.
-asig="$(ficheros | grep -E '(^|[^A-Za-z_])(PASSWORD|PASSWD|APIKEY|API_KEY|TOKEN|SECRET)[A-Za-z0-9_]*=' \
+#    Los nombres de la lista salen de los que usa el repo (EZARR_QBIT_PASS,
+#    EZARR_SONARR_API_KEY, ...). PASS va suelto porque "PASS" a secas es lo que
+#    se escribe en el codigo real: buscar solo PASSWORD/PASSWD no lo pilla.
+#    El caracter anterior no puede ser alfanumerico, asi que BYPASS= o
+#    MONKEY= no dan falsos positivos.
+asig="$(ficheros | grep -E '(^|[^A-Za-z0-9])(PASSWORD|PASSWD|PASS|APIKEY|API_KEY|TOKEN|SECRET|KEY)[A-Za-z0-9_]*=' \
         | grep -vE '=\s*(""|'"''"'|)$' \
         | grep -vE '=\s*(CHANGE_?ME|PLACEHOLDER|<|\$\{|\$\(|pendiente|PENDIENTE|POR_?DEFINIR|changeme)' \
         | grep -vE '^[a-zA-Z0-9_/.-]+:[0-9]+: *#' | head -3 || true)"
@@ -244,6 +254,75 @@ else
     ok "sin TTY y sin --yes falla en vez de colgarse"
 fi
 
+# Esta prueba existe por un bug real. ezarr_plan_run se ejecuta DOS veces: la
+# primera dibuja el resumen, la segunda aplica. La primera tambien llamaba a
+# apply(), y como la segunda solo se lanza DESPUES de ezarr_confirm, el stack
+# se instalaba antes de preguntar. En una maquina sin permisos para /data el
+# efecto era invisible (el mkdir fallaba y ya estaba); como root, habria
+# instalado de verdad.
+#
+# La puerta ahora es EZARR_APPLY_ARMED, que ezarr.sh arma despues de la
+# confirmacion. Se comprueba en dos niveles: que la bandera se arma despues de
+# preguntar, y que una ejecucion real sin --yes no intenta escribir nada.
+n_conf="$(grep -n 'ezarr_confirm ' "$ROOT/ezarr.sh" | head -1 | cut -d: -f1)"
+n_arm="$(grep -n 'EZARR_APPLY_ARMED=1' "$ROOT/ezarr.sh" | head -1 | cut -d: -f1)"
+if [ -n "$n_conf" ] && [ -n "$n_arm" ] && [ "$n_arm" -gt "$n_conf" ]; then
+    ok "la bandera de aplicar se arma despues de preguntar (linea $n_arm > $n_conf)"
+else
+    bad "la bandera de aplicar se arma despues de preguntar" \
+        "confirmacion en linea ${n_conf:-?}, armado en linea ${n_arm:-?}"
+fi
+
+# Una pasada real sin --yes tiene que quedarse en plan: cero escrituras, y
+# sobre todo cero "no se pudo", que es la firma de un apply que se ejecuto.
+out_real="$("$ROOT/ezarr.sh" --only core < /dev/null 2>&1 || true)"
+if printf '%s' "$out_real" | grep -q 'no se pudo:'; then
+    bad "una pasada sin --yes no debe intentar escribir" \
+        "$(printf '%s' "$out_real" | grep -m1 'no se pudo:')"
+else
+    ok "una pasada sin --yes no intenta escribir nada"
+fi
+if printf '%s' "$out_real" | grep -q 'nada se ha modificado'; then
+    ok "el resumen dice que no se toco nada"
+else
+    bad "el resumen dice que no se toco nada" "$(printf '%s' "$out_real" | tail -1)"
+fi
+
+# ------------------------------------------------------------ configuracion --
+# El instalador ESCRIBE la configuracion en $EZARR_CONF_DIR y launtime la LEE.
+# Si las dos rutas no salen de la misma variable, una instalacion con el
+# directorio cambiado escribe una configuracion que nadie lee nunca. Este test
+# monta un directorio de config y comprueba que se lee de ahi.
+printf '\nla configuracion se lee de $EZARR_CONF_DIR\n'
+CFGDIR="$(mktemp -d)"
+mkdir -p "$CFGDIR/etc"
+cat > "$CFGDIR/etc/ezarr.conf" <<EOF
+# comentario que se ignora
+EZARR_NTFY_URL=https://ntfy.invalid/topic-de-prueba
+\$(touch "$CFGDIR/EJECUTADO")
+EOF
+leido="$(EZARR_CONF_DIR="$CFGDIR/etc" bash -c '
+    . "$0/lib/log.sh"; . "$0/lib/config.sh"; ezarr_config_load
+    printf "%s" "${EZARR_NTFY_URL:-}"' "$ROOT")"
+run "lee el valor del fichero de configuracion" "$leido" "https://ntfy.invalid/topic-de-prueba"
+
+# El parser NO hace source. Una linea con sustitucion de comandos tiene que
+# quedar como texto, no ejecutarse: es la diferencia entre configurar y abrir
+# una puerta de ejecucion remota.
+if [ -e "$CFGDIR/EJECUTADO" ]; then
+    bad "el parser ejecuto una linea de shell del fichero de config" \
+        "se creo $CFGDIR/EJECUTADO"
+else
+    ok "el parser no ejecuta shell del fichero de config"
+fi
+
+# Precedencia: el entorno gana sobre el fichero (config.sh documenta el orden).
+leido2="$(EZARR_NTFY_URL=https://ntfy.invalid/desde-entorno EZARR_CONF_DIR="$CFGDIR/etc" bash -c '
+    . "$0/lib/log.sh"; . "$0/lib/config.sh"; ezarr_config_load
+    printf "%s" "${EZARR_NTFY_URL:-}"' "$ROOT")"
+run "el entorno gana sobre el fichero" "$leido2" "https://ntfy.invalid/desde-entorno"
+rm -rf "$CFGDIR"
+
 # ------------------------------------------------------------ idempotencia --
 # El instalador tiene que poder correrse dos veces sin romper nada. Se monta un
 # arbol de prueba con un arr-stack de mentira, se instala dos veces y se comparan
@@ -301,11 +380,11 @@ rm -rf "$IDEM" 2>/dev/null || true
 
 # --------------------------------------------------------------- resumen ----
 printf '\n'
-if [ "$FAIL" -eq 0 ]; then
-    printf '\033[32m%s comprobaciones, todas correctas\033[0m\n\n' "$PASS"
+if [ "$N_FAIL" -eq 0 ]; then
+    printf '\033[32m%s comprobaciones, todas correctas\033[0m\n\n' "$N_OK"
     exit 0
 fi
-printf '\033[31m%s correctas, %s con fallos\033[0m\n' "$PASS" "$FAIL"
-for n in "${FAILED_NAMES[@]}"; do printf '  - %s\n' "$n"; done
+printf '\033[31m%s correctas, %s con fallos\033[0m\n' "$N_OK" "$N_FAIL"
+for n in "${FALL_NAMES[@]}"; do printf '  - %s\n' "$n"; done
 printf '\n'
 exit 1
