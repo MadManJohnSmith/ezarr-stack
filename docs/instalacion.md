@@ -30,7 +30,7 @@ contra un `vayu` físico. Lo que lleva meses funcionando en un Poco X3 Pro es
 Comprobado el **2026-10-05** en esta máquina:
 
 ```bash
-$ cd /home/alan/ezarr-stack-build
+$ cd ezarr-stack      # tras `git clone`
 $ for f in ezarr.sh ezarrctl arr-stack lib/*.sh tests/smoke.sh; do
       printf '%-22s ' "$f"; bash -n "$f" && echo "OK (bash -n)"; done
 ezarr.sh               OK (bash -n)

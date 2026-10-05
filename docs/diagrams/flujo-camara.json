@@ -82,12 +82,7 @@
         ],
         "note": "Del RTSP a la biblioteca, con la regla de Jellyfin en el centro."
       }
-    ],
-    "repository": {
-      "url": "https://github.com/TU-USUARIO-GITHUB/ezarr-stack",
-      "provider": "github",
-      "link_mode": "local-only"
-    }
+    ]
   },
   "stages": [
     {
@@ -113,19 +108,7 @@
       "icon": "external",
       "stage": 0,
       "row": 0,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/etc/motion/motion.conf",
-          "line": 14,
-          "label": "URL literal"
-        },
-        {
-          "path": "configs/usr/local/bin/cam-conf.sh",
-          "line": 33,
-          "label": "cam-conf la reescribe"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "motion",
@@ -136,19 +119,7 @@
       "icon": "active",
       "stage": 0,
       "row": 1,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/etc/motion/motion.conf",
-          "line": 20,
-          "label": "threshold 3500"
-        },
-        {
-          "path": "configs/etc/motion/motion.conf",
-          "line": 23,
-          "label": "minimum_motion_frames 4"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "notify",
@@ -159,19 +130,7 @@
       "icon": "backend",
       "stage": 0,
       "row": 2,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/etc/motion/motion.conf",
-          "line": 36,
-          "label": "on_event_start"
-        },
-        {
-          "path": "configs/usr/local/bin/cam-notify.sh",
-          "line": 21,
-          "label": "cooldown 300 s"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "framegrab",
@@ -182,19 +141,7 @@
       "icon": "backend",
       "stage": 0,
       "row": 3,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/cam-notify.sh",
-          "line": 29,
-          "label": "timeout 8"
-        },
-        {
-          "path": "configs/usr/local/bin/cam-notify.sh",
-          "line": 31,
-          "label": "/run/cam-alert.jpg"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "ntfy",
@@ -205,19 +152,7 @@
       "icon": "external",
       "stage": 0,
       "row": 4,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/cam-notify.sh",
-          "line": 35,
-          "label": "sube alerta.jpg"
-        },
-        {
-          "path": "configs/usr/local/bin/cam-notify.sh",
-          "line": 39,
-          "label": "solo texto"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "extpipe",
@@ -228,19 +163,7 @@
       "icon": "backend",
       "stage": 1,
       "row": 0,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/etc/motion/motion.conf",
-          "line": 30,
-          "label": "movie_extpipe_use on"
-        },
-        {
-          "path": "configs/etc/motion/motion.conf",
-          "line": 31,
-          "label": "veryfast, +faststart"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "movie",
@@ -251,24 +174,7 @@
       "icon": "backend",
       "stage": 1,
       "row": 1,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/etc/motion/motion.conf",
-          "line": 25,
-          "label": "event_gap 30"
-        },
-        {
-          "path": "configs/etc/motion/motion.conf",
-          "line": 27,
-          "label": "post_capture 10"
-        },
-        {
-          "path": "configs/etc/motion/motion.conf",
-          "line": 33,
-          "label": "movie_max_time 300"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "clips",
@@ -279,19 +185,7 @@
       "icon": "database",
       "stage": 1,
       "row": 2,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/etc/motion/motion.conf",
-          "line": 39,
-          "label": "target_dir"
-        },
-        {
-          "path": "configs/usr/local/bin/mount-gdrive.sh",
-          "line": 62,
-          "label": "category.create=ff"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "upload",
@@ -302,24 +196,7 @@
       "icon": "backend",
       "stage": 2,
       "row": 0,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/etc/motion/motion.conf",
-          "line": 37,
-          "label": "on_movie_end"
-        },
-        {
-          "path": "configs/usr/local/bin/cam-upload.sh",
-          "line": 6,
-          "label": "lee /data/local"
-        },
-        {
-          "path": "configs/usr/local/bin/cam-upload.sh",
-          "line": 25,
-          "label": "flock -n"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "guard",
@@ -330,24 +207,7 @@
       "icon": "security",
       "stage": 2,
       "row": 1,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/cam-upload.sh",
-          "line": 12,
-          "label": "lee ApiKey"
-        },
-        {
-          "path": "configs/usr/local/bin/cam-upload.sh",
-          "line": 14,
-          "label": "GET /Sessions"
-        },
-        {
-          "path": "configs/usr/local/bin/cam-upload.sh",
-          "line": 17,
-          "label": "defer → exit 0"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "drive",
@@ -358,19 +218,7 @@
       "icon": "cloud",
       "stage": 2,
       "row": 3,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/cam-upload.sh",
-          "line": 7,
-          "label": "DST"
-        },
-        {
-          "path": "configs/usr/local/bin/cam-upload.sh",
-          "line": 35,
-          "label": "rclone copy"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "cronupload",
@@ -381,14 +229,7 @@
       "icon": "waiting",
       "stage": 2,
       "row": 4,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/root-crontab.txt",
-          "line": 3,
-          "label": "sin guard ni lock"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "prune",
@@ -399,19 +240,7 @@
       "icon": "success",
       "stage": 3,
       "row": 0,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/cam-upload.sh",
-          "line": 38,
-          "label": "rc≠0 no poda"
-        },
-        {
-          "path": "configs/usr/local/bin/cam-upload.sh",
-          "line": 43,
-          "label": "tail -n +6"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "gcdrive",
@@ -422,14 +251,7 @@
       "icon": "clock",
       "stage": 3,
       "row": 1,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/etc/cron.d/arr-cam-clean",
-          "line": 2,
-          "label": "45 3 * * *"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "scan",
@@ -440,19 +262,7 @@
       "icon": "waiting",
       "stage": 3,
       "row": 2,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/cam-library-scan.sh",
-          "line": 12,
-          "label": "POST /Items/<id>/Refresh"
-        },
-        {
-          "path": "collect.sh",
-          "line": 34,
-          "label": "falta arr-cam-scan"
-        }
-      ]
+      "width": 152
     },
     {
       "id": "jflib",
@@ -463,14 +273,7 @@
       "icon": "frontend",
       "stage": 3,
       "row": 3,
-      "width": 152,
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/cam-library-scan.sh",
-          "line": 9,
-          "label": "busca la carpeta Camara"
-        }
-      ]
+      "width": 152
     }
   ],
   "flows": [

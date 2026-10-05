@@ -4,29 +4,18 @@ name: Diagramas
 #
 # El render NO es un subgraph de muestra: es el mismo HTML que esta en el repo,
 # byte a byte, y eso se ha comprobado en local (cmp sin diferencias en los tres).
-# Si el renderMapper cambia de version y produce otro HTML, este workflow lo
-# commitea y el diff se ve en la PR. Eso es lo que queremos: que el HTML
-# generado nunca sea una copia pegada a mano que nadie vuelve a generar.
+# Si Archify cambia de version y produce otro HTML, este workflow lo commitea y
+# el diff se ve en la PR. Eso es lo que queremos: que el HTML generado nunca sea
+# una copia pegada a mano que nadie vuelve a generar.
 #
-# AVISO HONESTO, escrito antes de que exista el primer run (2026-10-05): este
-# workflow NO puede llegar a verde tal como esta el repo hoy. Dos de los tres
-# diagramas declaran evidencia de fuente (docs/diagrams/flujo-camara.json y
-# docs/diagrams/stack-architecture.json, campo /meta/repository), y Archify se
-# niega a renderizar sin comprobar esa evidencia contra un checkout real. Hacen
-# falta DOS cosas que no estan en este repositorio:
-#
-#   1. Que ezarr-config sea clonable desde CI. hoy es PRIVADO
-#      (`gh repo view TU-USUARIO-GITHUB/ezarr-config` -> visibility: PRIVATE), asi
-#      que hace falta el secreto EZARR_CONFIG_TOKEN (un PAT con scope `repo`).
-#   2. Que la revision fijada exista en el remoto. Los tres JSONs apuntan a
-#      5256de364dcc3ac14586aa45dc33e0c5ca704608, que hoy es un commit SOLO
-#      LOCAL de /home/alan/ezarr-config: `git fetch origin 5256de3...` responde
-#      "upload-pack: not our ref". En el remoto solo hay 40154d29 (origin/master).
-#
-# El job falla si un diagrama no renderiza, y estos dos no renderizan hasta que
-# se arregle lo de arriba. No se relaja el render para que el CI quede verde:
-# un diagrama sin evidencia verificada es exactamente el fallo que este workflow
-# existe para no dejar pasar.
+# POR QUE NO HAY EVIDENCIA QUE VERIFICAR (2026-10-05): los diagramas se
+# construyeron leyendo el config vivo del telefono, que vive en un repo privado,
+# privado. Un diagrama publico no puede anclar su procedencia ahi:
+# ni la URL ni el SHA serian comprobables por quien clone este repo, y un enlace
+# a un repo privado en un diagrama publico es una fuga. Asi que se elimino el
+# campo /meta/repository y las referencias /sources de los tres JSON. Lo que se
+# pierde es el enlace clicable de cada nodo al archivo que lo demuestra; lo que
+# se evita es publicar la topologia de la red de Alan por el camino.
 #
 # Que no exista `curl | bash` ni instalador remoto (README.md:125) es
 # independiente de esto: esto regenera HTML que ya esta en el repo.
@@ -101,62 +90,13 @@ jobs:
               [ -n "$t" ] && printf '%s\t%s\t%s\n' "$t" "$f" "$out"
             done
             echo EOF
-            echo 'revisions<<EOF'
-            for f in docs/diagrams/*.json; do
-              jq -r '.meta.repository.revision // empty' "$f"
-            done | sort -u | sed '/^$/d'
-            echo EOF
           } >> "$GITHUB_OUTPUT"
           echo "Diagramas fuente:"; sed -n '/sources<<EOF/,/^EOF$/p' "$GITHUB_OUTPUT" | sed '1d;$d'
-          echo "Revisiones de evidencia:"; sed -n '/revisions<<EOF/,/^EOF$/p' "$GITHUB_OUTPUT" | sed '1d;$d' || echo "(ninguna)"
-
-      - name: Clonar la evidencia y traer cada revision fijada
-        # Solo se ejecuta si algun diagrama declara evidencia. ciclo-vigilancia-
-        # respaldo.lifecycle.json no declara ninguna, asi que no necesita esto.
-        if: steps.discover.outputs.revisions != ''
-        env:
-          EZARR_CONFIG_TOKEN: ${{ secrets.EZARR_CONFIG_TOKEN }}
-          # Por env, no con `${{ }}` dentro del script: interpolar un valor
-          # dentro de un `run` es la via clasica de inyeccion de shell. Aqui los
-          # valores salen de los JSON del propio repo, asi que el riesgo es bajo,
-          # pero el patron correcto es este y no cuesta nada aplicarlo.
-          REVISIONS: ${{ steps.discover.outputs.revisions }}
-        run: |
-          set -euo pipefail
-          if [ -z "${EZARR_CONFIG_TOKEN:-}" ]; then
-            echo "::error::Falta el secreto EZARR_CONFIG_TOKEN. Dos de los tres" \
-                 "diagramas declaran /meta/repository y Archify no renderiza sin" \
-                 "verificar la evidencia contra un checkout real de ezarr-config," \
-                 "que es un repositorio privado."
-            exit 1
-          fi
-          git init -q evidence
-          cd evidence
-          git remote add origin https://github.com/TU-USUARIO-GITHUB/ezarr-config.git
-          git -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$EZARR_CONFIG_TOKEN" | base64 -w0)" \
-              fetch -q --depth 1 origin master
-          # Sin esto Archify responde revision-unavailable aunque el token sea
-          # bueno: comprueba que el SHA este en el clon antes de renderear.
-          missing=0
-          for rev in $REVISIONS; do
-            if git -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$EZARR_CONFIG_TOKEN" | base64 -w0)" \
-                 fetch -q --depth 1 origin "$rev" 2>/dev/null; then
-              echo "revision $rev: en el remoto"
-            else
-              echo "::error::La revision $rev NO existe en el remoto de ezarr-config." \
-                   "Los JSON de docs/diagrams/ la fijan como evidencia, pero no se" \
-                   "ha pusheado. Pusheala, o vuelve a fijar la evidencia a una" \
-                   "revision que si exista en el remoto."
-              missing=1
-            fi
-          done
-          [ "$missing" -eq 0 ] || exit 1
 
       - name: Renderizar los tres diagramas
         id: render
         env:
-          # Ver el comentario del paso anterior: por env, no interpolando
-          # `${{ }}` dentro del script.
+          # Por env, no interpolando `${{ }}` dentro del script.
           SOURCES: ${{ steps.discover.outputs.sources }}
         run: |
           set -euo pipefail
@@ -173,14 +113,7 @@ jobs:
             [ -n "$out_rel" ] || { echo "::error::$json no declara /meta/output"; exit 1; }
             html="$OUT/$(basename "$out_rel")"
 
-            # La evidencia se pasa solo si el diagrama la declara. Un diagrama
-            # que no la declara, renduido con --repo-root, tambien falla.
-            if jq -e '.meta.repository.revision' "$json" >/dev/null 2>&1; then
-              $ARCHIFY render "$type" "$json" "$html" \
-                --quality showcase --repo-root evidence
-            else
-              $ARCHIFY render "$type" "$json" "$html" --quality showcase
-            fi
+            $ARCHIFY render "$type" "$json" "$html" --quality showcase
 
             [ -s "$html" ] || { echo "::error::$json renderizo un HTML vacio"; exit 1; }
             printf '%s\t%s\t%s\n' "$type" "$json" "$out_rel" >> "$RUNNER_TEMP/rendered.tsv"

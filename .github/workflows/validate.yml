@@ -79,7 +79,7 @@ jobs:
       #
       # No se usa `archify validate` aqui a proposito: exige clonar Archify y,
       # en dos de los tres diagramas, tambien el checkout de evidencia de
-      # ezarr-config, que es privado. Eso ya lo hace diagrams.yml, que clona
+      # un repositorio de configuracion privado. Eso ya lo hace diagrams.yml, que
       # Archify. validate.yml tiene que seguir siendo "rapido, sin secretos",
       # como pide el encargo.
       - name: Los JSON de diagramas son validos

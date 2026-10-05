@@ -5,12 +5,7 @@
     "title": "Ciclo de vigilancia y respaldo",
     "output": "docs/diagrams/ciclo-vigilancia-respaldo.html",
     "animation": "trace",
-    "quality_profile": "showcase",
-    "repository": {
-      "url": "https://github.com/TU-USUARIO-GITHUB/ezarr-stack",
-      "provider": "github",
-      "link_mode": "local-only"
-    }
+    "quality_profile": "showcase"
   },
   "lanes": [
     {

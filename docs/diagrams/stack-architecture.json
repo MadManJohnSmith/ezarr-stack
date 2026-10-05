@@ -451,11 +451,6 @@
       "viewer.common.copyLink": "Copiar enlace",
       "viewer.common.clear": "Borrar",
       "viewer.common.close": "Cerrar"
-    },
-    "repository": {
-      "url": "https://github.com/TU-USUARIO-GITHUB/ezarr-stack",
-      "provider": "github",
-      "link_mode": "local-only"
     }
   },
   "components": [
@@ -471,13 +466,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "RUNBOOK.md",
-          "line": 20,
-          "label": "interfaz de acceso"
-        }
       ]
     },
     {
@@ -493,13 +481,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/etc/cloudflared/config.yml",
-          "line": 5,
-          "label": "ingress público"
-        }
       ]
     },
     {
@@ -514,13 +495,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "RUNBOOK.md",
-          "line": 35,
-          "label": "patrón conocido"
-        }
       ]
     },
     {
@@ -535,13 +509,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/mount-gdrive.sh",
-          "line": 30,
-          "label": "remoto rclone"
-        }
       ]
     },
     {
@@ -556,13 +523,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "RUNBOOK.md",
-          "line": 14,
-          "label": "capa de alertas"
-        }
       ]
     },
     {
@@ -578,18 +538,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/start-tunnel.sh",
-          "line": 6,
-          "label": "dos réplicas"
-        },
-        {
-          "path": "configs/usr/local/bin/start-tunnel.sh",
-          "line": 41,
-          "label": "protocolo quic"
-        }
       ]
     },
     {
@@ -605,18 +553,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/arr-stack",
-          "line": 195,
-          "label": "arranque a mano"
-        },
-        {
-          "path": "RUNBOOK.md",
-          "line": 41,
-          "label": "sin systemd"
-        }
       ]
     },
     {
@@ -631,13 +567,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/etc/nginx/sites-enabled/ezarr.conf",
-          "line": 2,
-          "label": "vhosts"
-        }
       ]
     },
     {
@@ -653,18 +582,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/arr-stack",
-          "line": 8,
-          "label": "orden de arranque"
-        },
-        {
-          "path": "configs/usr/local/bin/arr-stack",
-          "line": 29,
-          "label": "case idempotente"
-        }
       ]
     },
     {
@@ -679,13 +596,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/arr-stack",
-          "line": 155,
-          "label": "panel web"
-        }
       ]
     },
     {
@@ -700,13 +610,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/arr-stack",
-          "line": 119,
-          "label": "reproductor"
-        }
       ]
     },
     {
@@ -722,23 +625,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/arr-stack",
-          "line": 127,
-          "label": "prowlarr"
-        },
-        {
-          "path": "configs/usr/local/bin/arr-stack",
-          "line": 141,
-          "label": "sonarr"
-        },
-        {
-          "path": "configs/usr/local/bin/arr-stack",
-          "line": 148,
-          "label": "bazarr"
-        }
       ]
     },
     {
@@ -754,18 +640,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/root/.config/qBittorrent/qBittorrent.conf",
-          "line": 57,
-          "label": "puerto real"
-        },
-        {
-          "path": "configs/etc/nginx/sites-enabled/ezarr.conf",
-          "line": 164,
-          "label": "compuerta 403"
-        }
       ]
     },
     {
@@ -780,13 +654,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "RUNBOOK.md",
-          "line": 53,
-          "label": "grabación 24/7"
-        }
       ]
     },
     {
@@ -801,13 +668,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/arr-stack",
-          "line": 163,
-          "label": "backend de Homarr"
-        }
       ]
     },
     {
@@ -823,18 +683,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/arr-stack",
-          "line": 185,
-          "label": "arranque"
-        },
-        {
-          "path": "configs/etc/nginx/sites-enabled/ezarr.conf",
-          "line": 146,
-          "label": "solo local"
-        }
       ]
     },
     {
@@ -849,13 +697,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/mount-gdrive.sh",
-          "line": 62,
-          "label": "opciones de unión"
-        }
       ]
     },
     {
@@ -870,18 +711,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/mount-gdrive.sh",
-          "line": 9,
-          "label": "árbol local"
-        },
-        {
-          "path": "RUNBOOK.md",
-          "line": 15,
-          "label": "destino de backups"
-        }
       ]
     },
     {
@@ -897,13 +726,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/mount-gdrive.sh",
-          "line": 30,
-          "label": "montaje FUSE"
-        }
       ]
     },
     {
@@ -919,18 +741,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/stack-watchdog.sh",
-          "line": 2,
-          "label": "ciclo y motivo"
-        },
-        {
-          "path": "RUNBOOK.md",
-          "line": 13,
-          "label": "tabla de vigilantes"
-        }
       ]
     },
     {
@@ -946,13 +756,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/resilience-watchdog.sh",
-          "line": 5,
-          "label": "ciclo de 5 s"
-        }
       ]
     },
     {
@@ -968,13 +771,6 @@
       "size": [
         150,
         54
-      ],
-      "sources": [
-        {
-          "path": "configs/usr/local/bin/freeze-guard.sh",
-          "line": 3,
-          "label": "umbral y último recurso"
-        }
       ]
     }
   ],
