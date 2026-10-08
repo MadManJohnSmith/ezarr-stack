@@ -634,6 +634,13 @@ plan_scripts() {
         [ -f "$here/$f" ] || { log_warn "el repo no trae $f: no se podra instalar"; continue; }
         fs_plan "+ ${EZARR_BIN_DIR}/$f"
     done
+    # lib/ viaja con ellos, no por capricho: ezarrctl y ezarr.sh resuelven
+    # EZARR_ROOT como el directorio del propio script, asi que una vez copiados a
+    # $EZARR_BIN_DIR buscan $EZARR_BIN_DIR/lib/. Sin esto el ezarrctl instalado
+    # muere en el primer source con "lib/log.sh: No such file or directory".
+    if [ -d "$here/lib" ]; then
+        fs_plan "+ ${EZARR_BIN_DIR}/lib/ ($(ls -1 "$here"/lib/*.sh 2>/dev/null | wc -l) ficheros .sh)"
+    fi
     # arr-stack sin el cual nada arranca: si falta del checkout, se dice AHORA y
     # con codigo, no en el paso 7 cuando apply_activar ya no puede hacer nada.
     if [ ! -f "$here/arr-stack" ]; then
@@ -652,6 +659,17 @@ apply_scripts() {
     [ -f "$here/arr-stack" ] && fs_install -m 0755 "$here/arr-stack" "$EZARR_BIN_DIR/arr-stack"
     [ -f "$here/ezarrctl" ] && fs_install -m 0755 "$here/ezarrctl" "$EZARR_BIN_DIR/ezarrctl"
     [ -f "$here/ezarr.sh" ]  && fs_install -m 0755 "$here/ezarr.sh"  "$EZARR_BIN_DIR/ezarr-stack-install"
+    # Los .sh de lib/ se sourcean, no se ejecutan: 0644 es lo correcto y deja
+    # claro que no son nada ejecutable por si misma.
+    if [ -d "$here/lib" ]; then
+        fs_mkdir "$EZARR_BIN_DIR/lib"
+        local f
+        for f in "$here"/lib/*.sh; do
+            [ -f "$f" ] || continue
+            fs_install -m 0644 "$f" "$EZARR_BIN_DIR/lib/$(basename "$f")"
+        done
+    fi
+
     return 0
 }
 

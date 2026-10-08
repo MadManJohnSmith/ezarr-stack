@@ -431,6 +431,21 @@ if [ -x "$BIN/bin/arr-stack" ]; then
 else
     bad "arr-stack no queda ejecutable" "modo $(stat -c '%a' "$BIN/bin/arr-stack" 2>/dev/null || echo '?')"
 fi
+# ezarrctl instalado tiene que|sourcear| sus propias librerias:EZARR_ROOT es el
+# directorio del propio script, asi que si lib/ no viaja con el, el comando
+# instalado muere con "lib/log.sh: No such file or directory". Esta comprobacion
+# existe porque ese fallo era real y nadie lo veia: en el repo todo funciona.
+if [ -f "$BIN/bin/lib/log.sh" ] && [ -f "$BIN/bin/lib/secrets.sh" ]; then
+    ok "lib/ viaja con los scripts instalados"
+else
+    bad "lib/ no viaja con los scripts instalados" "falta lib/ en $BIN/bin"
+fi
+VER="$("$BIN/bin/ezarrctl" version 2>&1 | head -1)"
+case "$VER" in
+    ezarrctl*) ok "el ezarrctl instalado responde" ;;
+    *)         bad "el ezarrctl instalado no responde" "$(printf '%s' "$VER" | cut -c1-90)" ;;
+esac
+
 if [ -f "$BIN/bin/arr-stack" ] && cmp -s "$ROOT/arr-stack" "$BIN/bin/arr-stack"; then
     ok "el arr-stack instalado es el del repo, no un sustituto"
 else
@@ -453,6 +468,72 @@ fi
 rm -rf "$BIN" 2>/dev/null || true
 
 rm -rf "$IDEM" 2>/dev/null || true
+
+# -------------------------------------------------------------- secretos ------
+# Lo que se comprueba aqui es la promesa del comando, no su codigo: el usuario
+# pone sus credenciales sin abrir un editor, el fichero acaba en 600 y ningun
+# comando imprime jamas un valor. La ultima comprobacion es la importante.
+printf '\nsecretos\n'
+SEC_DIR="$ROOT/.smoke-etc-ezarr"
+rm -rf "$SEC_DIR"; mkdir -p "$SEC_DIR"
+EZARR_CONF_DIR="$SEC_DIR"; export EZARR_CONF_DIR
+unset EZARR_CONF_USER 2>/dev/null || true
+SC="$ROOT/ezarrctl"
+
+if "$SC" secrets init >/dev/null 2>&1 && [ -f "$SEC_DIR/secrets.conf" ]; then
+    ok "secrets init crea el fichero"
+else
+    bad "secrets init crea el fichero"
+fi
+[ "$(stat -c '%a' "$SEC_DIR/secrets.conf" 2>/dev/null)" = "600" ] \
+    && ok "secrets.conf queda en 600" || bad "secrets.conf queda en 600"
+
+if "$SC" secrets init >/dev/null 2>&1; then
+    bad "init sin --force no pisa un fichero existente"
+else
+    ok "init sin --force no pisa un fichero existente"
+fi
+
+VALOR="valor-de-prueba-que-no-debe-salir-nunca"
+"$SC" secrets set EZARR_NTFY_TOPIC "$VALOR" >/dev/null 2>&1
+grep -q "^EZARR_NTFY_TOPIC=$VALOR$" "$SEC_DIR/secrets.conf" 2>/dev/null \
+    && ok "set escribe el valor en el fichero" || bad "set escribe el valor en el fichero"
+
+"$SC" secrets set CLAVE_QUE_NO_EXISTE algo >/dev/null 2>&1
+[ $? -ne 0 ] && ok "set rechaza una clave que no esta en el catalogo" \
+            || bad "set rechaza una clave que no esta en el catalogo"
+
+"$SC" secrets set EZARR_NTFY_TOPIC "topic-de-prueba-9" >/dev/null 2>&1
+# Sin tuberia con grep -q: con `set -o pipefail`, grep -q cierra la tuberia en
+# cuanto encuentra la coincidencia, list se come un SIGPIPE al resto de la tabla
+# y el pipeline sale con 141 aunque la palabra estuviera ahi. Menudo rato se
+# pierde uno persiguiendo eso.
+LISTA="$("$SC" secrets list 2>&1)"
+case "$LISTA" in
+    *ejemplo*) ok "list marca los valores de ejemplo como no configurados" ;;
+    *)          bad "list marca los valores de ejemplo como no configurados" ;;
+esac
+
+"$SC" secrets doctor >/dev/null 2>&1
+[ $? -ne 0 ] && ok "doctor falla cuando falta una obligatoria" || bad "doctor falla cuando falta una obligatoria"
+
+chmod 644 "$SEC_DIR/secrets.conf" 2>/dev/null
+"$SC" secrets doctor --fix >/dev/null 2>&1
+[ "$(stat -c '%a' "$SEC_DIR/secrets.conf" 2>/dev/null)" = "600" ] \
+    && ok "doctor --fix devuelve el fichero a 600" || bad "doctor --fix devuelve el fichero a 600"
+
+"$SC" secrets unset EZARR_NTFY_TOPIC >/dev/null 2>&1
+grep -q "^EZARR_NTFY_TOPIC=$" "$SEC_DIR/secrets.conf" 2>/dev/null \
+    && ok "unset deja la clave puesta pero vacia" || bad "unset deja la clave puesta pero vacia"
+
+SALIDA="$("$SC" secrets list 2>&1; "$SC" secrets doctor 2>&1; "$SC" secrets set EZARR_NTFY_TOPIC "$VALOR" 2>&1)"
+case "$SALIDA" in
+    *"$VALOR"*) bad "ningun comando imprime el valor de un secreto" ;;
+    *)          ok  "ningun comando imprime el valor de un secreto" ;;
+esac
+
+unset EZARR_CONF_DIR
+rm -rf "$SEC_DIR" 2>/dev/null || true
 
 # --------------------------------------------------------------- resumen ----
 printf '\n'
