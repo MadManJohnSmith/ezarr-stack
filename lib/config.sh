@@ -35,6 +35,7 @@ EZARR_CONF_FILES=(
     "${EZARR_CONF_DIR}/ezarr.conf"        # sistema: topics, IPs, red
     "${EZARR_CONF_DIR}/apps.conf"         # sistema: claves de las apps
     "${EZARR_CONF_DIR}/healthchecks.conf" # sistema: dead-man switch
+    "${EZARR_CONF_DIR}/secrets.conf"       # credenciales: nunca se versiona
     "${EZARR_CONF_USER}"                  # usuario: overrides locales
 )
 

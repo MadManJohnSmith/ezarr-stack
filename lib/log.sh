@@ -117,6 +117,11 @@ log_warn() {
 # El detalle del error va indentado bajo el error, nunca en la misma linea.
 log_error_hint() { printf '%s  -> %s%s\n' "$EZARR_C_DIM" "$*" "$EZARR_C_RESET" >&2; }
 
+# Igual que log_error_hint pero sin color de error: la pista que acompaña a un
+# aviso (un secreto sin poner, un permiso que hay que cambiar) no es un fallo,
+# y vistirla de rojo hace que se lea como tal.
+log_warn_hint() { printf '%s  -> %s%s\n' "$EZARR_C_DIM" "$*" "$EZARR_C_RESET" >&2; }
+
 log_error() {
     printf '%serror:%s %s\n' "$EZARR_C_RED" "$EZARR_C_RESET" "$*" >&2
     return 0

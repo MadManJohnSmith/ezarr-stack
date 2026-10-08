@@ -43,6 +43,7 @@ EZARR_ROOT="$(ezarr_repo_root)"
 . "$EZARR_ROOT/lib/config.sh"
 . "$EZARR_ROOT/lib/components.sh"
 . "$EZARR_ROOT/lib/stack.sh"
+. "$EZARR_ROOT/lib/secrets.sh"
 
 # ------------------------------------------------------------- ajustes ------
 WATCH=0
@@ -74,6 +75,7 @@ ${EZARR_C_BOLD}USO${EZARR_C_RESET}
 
 ${EZARR_C_BOLD}COMANDOS${EZARR_C_RESET}
   status              que esta vivo, que esta parado y por que        (solo lectura)
+  secrets             init/list/set/unset/doctor: tus credenciales, sin editores
   start [servicio...] arrancar uno, varios o todo
   stop [servicio...]  parar uno, varios o todo
   restart [servicio..]stop + start, en orden de dependencias, nunca en paralelo
@@ -605,6 +607,48 @@ cmd_update() {
 DOCTOR_PROBLEMS=0
 DOCTOR_WARNINGS=0
 
+secrets_usage() {
+    cat <<EOF
+${EZARR_C_BOLD}$EZARR_SELF secrets${EZARR_C_RESET} — los secretos del stack, sin abrir un editor.
+
+${EZARR_C_BOLD}USO${EZARR_C_RESET}
+  $EZARR_SELF secrets init [--force]   crea secrets.conf en 600 desde la plantilla
+  $EZARR_SELF secrets list             que falta y que esta puesto (nunca el valor)
+  $EZARR_SELF secrets set CLAVE        te lo pide sin eco y lo escribe en 600
+  $EZARR_SELF secrets unset CLAVE      la deja vacia
+  $EZARR_SELF secrets doctor [--fix]   revisa permisos, obligatorias y valores de ejemplo
+
+${EZARR_C_BOLD}EJEMPLO${EZARR_C_RESET}
+  $EZARR_SELF secrets init
+  $EZARR_SELF secrets set EZARR_NTFY_TOPIC
+  $EZARR_SELF secrets doctor
+
+${EZARR_C_BOLD}NOTAS${EZARR_C_RESET}
+  · El valor no se imprime nunca: ni en list, ni en doctor, ni en un error.
+  · Pasar el valor como argumento ($EZARR_SELF secrets set CLAVE valor) funciona,
+    pero queda en el historial del shell. La forma normal es sin argumento.
+  · El fichero vive en ${EZARR_CONF_DIR:-/etc/ezarr}/secrets.conf y jamas se versiona.
+EOF
+}
+
+# Todo lo de credenciales en un comando. Los subcomandos delegan en lib/secrets.sh:
+# aqui solo se reparte el exit code para que el script pueda encadenarse.
+cmd_secrets() {
+    local sub="${1:-list}"
+    [ $# -gt 0 ] && shift
+    case "$sub" in
+        init)   ezarr_secrets_init "$@" ;;
+        set)    ezarr_secrets_set "$@" ;;
+        unset)  ezarr_secrets_unset "$@" ;;
+        list)   ezarr_secrets_list ;;
+        doctor) ezarr_secrets_doctor "$@" || ezarr_exit "${EZARR_EX_VERIFY:-4}" ;;
+        ""|help|-h|--help) secrets_usage ;;
+        *)      log_error "subcomando desconocido: $sub"
+                log_error_hint "init | list | set | unset | doctor"
+                ezarr_exit "${EZARR_EX_USAGE:-2}" ;;
+    esac
+}
+
 cmd_doctor() {
     ezarr_detect_env
     DOCTOR_PROBLEMS=0; DOCTOR_WARNINGS=0
@@ -639,6 +683,17 @@ cmd_doctor() {
     fi
     log_ok "todo correcto"
     return 0
+    # Los secretos van los ultimos a proposito: todo lo de arriba puede estar
+    # en verde y aun asi no llegarte ni un aviso porque el topic de ntfy no esta
+    # puesto. Es el fallo que mas cuesta diagnosticar, asi que se dice aqui.
+    log_step "secretos"
+    if ezarr_secrets_doctor "$([ "$FIX" -eq 1 ] && echo --fix)"; then
+        _check ok secrets "credenciales obligatorias puestas y secretos.conf en 600"
+    else
+        _check warn secrets "faltan credenciales o secrets.conf con permisos abiertos"
+        [ "$DOCTOR_WARNINGS" -eq 0 ] && DOCTOR_PROBLEMS=1
+    fi
+
 }
 
 # ---------------------------------------------------------------------------
@@ -844,6 +899,9 @@ main() {
     ezarr_log_init
 
     case "$cmd" in
+        secrets)
+            cmd_secrets "$@"
+            ;;
         status|start|stop|restart|logs|backup|update|doctor)
             parse_common "$@"
             ezarr_conf_defaults
@@ -870,7 +928,7 @@ main() {
             printf 'ezarrctl %s (%s/%s)\n' "$EZARR_STACK_VERSION" "$(uname -s)" "${EZARR_ENV_ARCH:-$(uname -m)}" ;;
         *)
             log_error "comando desconocido: $cmd"
-            log_error_hint "comandos: status start stop restart logs backup update doctor"
+            log_error_hint "comandos: status start stop restart logs backup update doctor secrets"
             log_error_hint "o ejecuta '$EZARR_SELF help' para la ayuda completa"
             ezarr_exit "${EZARR_EX_USAGE:-2}" ;;
     esac
