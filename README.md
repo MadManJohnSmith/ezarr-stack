@@ -194,6 +194,23 @@ Los montajes FUSE (rclone, mergerfs) además **no son procesos**: `arr-stack` lo
 lista aparte y dice en voz alta que no los gestiona, en vez de fingir que
 arrancaron.
 
+### Tus credenciales, en un comando
+
+Los secretos (topic de ntfy, contraseña de la cámara, URL de Healthchecks, remoto
+de Drive, token del túnel, clave de subtítulos) van todos en
+`/etc/ezarr/secrets.conf`, en 600 y fuera de git. No hace falta que edites nada
+a mano:
+
+```bash
+ezarrctl secrets init      # crea el fichero desde la plantilla
+ezarrctl secrets set EZARR_NTFY_TOPIC   # te lo pide sin que se vea
+ezarrctl secrets list      # qué falta, sin mostrar ningún valor
+ezarrctl secrets doctor    # permisos, obligatorias y valores de ejemplo
+```
+
+El comando nunca imprime un valor, ni cuando algo falla. Detalle completo en
+[docs/instalacion.md §7.1](docs/instalacion.md).
+
 ### `ezarrctl`: el día después
 
 ```
@@ -476,6 +493,12 @@ TWRP, 12 installable components, no Docker and no systemd.
 ./ezarr.sh --dry-run --profile minimal   # print the plan, write nothing
 sudo ./ezarr.sh --yes --profile minimal # install it
 ```
+
+Your credentials go in one file (`/etc/ezarr/secrets.conf`, mode 600, never
+committed) and there is a command for them: `ezarrctl secrets init` to create it
+from the template, `secrets set KEY` to be asked for a value without it appearing
+on screen, `secrets list` to see what is missing, and `secrets doctor` to check
+permissions and placeholder values. No subcommand ever prints a value back.
 
 The installer **starts nothing** when it finishes. As of 2026-10-05 the default
 `standard` profile **fails with exit 6** — `arr`, `subs` and `downloads` ship

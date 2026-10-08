@@ -459,6 +459,42 @@ valor por defecto  <  /etc/ezarr/ezarr.conf  <  ~/.config/ezarr/ezarr.conf
 
 ---
 
+### 7.1. Los secretos, sin abrir un editor
+
+Todo lo que es credencial vive en **un solo fichero**, `/etc/ezarr/secrets.conf`,
+en modo 600 y nunca versionado. Y hay un comando para ponerlo:
+
+```bash
+ezarrctl secrets init        # crea el fichero desde la plantilla
+ezarrctl secrets list        # qué falta y qué está puesto (nunca el valor)
+ezarrctl secrets set CLAVE   # te lo pide sin eco y lo escribe en 600
+ezarrctl secrets doctor      # permisos, obligatorias y valores de ejemplo sin cambiar
+```
+
+| Clave | ¿Obligatoria? | De dónde sale | Qué pasa si no la pones |
+|---|---|---|---|
+| `EZARR_CAMERA_RTSP_PASS` | sí | La del aparato, en la pegatina o en su app | La cámara no responde y no hay aviso de por qué |
+| `EZARR_NTFY_TOPIC` | sí | El que crees en ntfy.sh: largo y aleatorio | **No te llega nada.** El watchdog cura bien y no te cuenta nada: es el fallo que más cuesta diagnosticar |
+| `EZARR_HC_PING_URL` | no | Healthchecks.io → New Check → ping, sin `/fail` | Si el watchdog se muere, nadie se entera |
+| `RCLONE_REMOTE` | no | El nombre del remoto que creaste con `rclone config` | No hay copia a Drive ni offload |
+| `EZARR_CF_TUNNEL_TOKEN` | no | Cloudflare Zero Trust → Tunnels → token | Sin túnel; el acceso es solo por Tailscale o LAN |
+| `EZARR_SUBS_API_KEY` | no | OpenSubtitles.com o SubDL | Bazarr va al límite gratis del proveedor (unas 20 al día) |
+| `EZARR_TAILSCALE_AUTHKEY` | no | Tailscale → Settings → Keys | El teléfono se une al tailnet escribiendo la URL de login |
+
+Dos detalles que hacen que esto sea seguro por construcción, y no por costumbre:
+
+- **Ningún comando imprime un valor.** Ni `list`, ni `doctor`, ni un error. Solo
+  el nombre de la clave y si está puesta. Hay un test que lo comprueba.
+- **`doctor` distingue "puesta" de "puesta de verdad".** Si copias la plantilla
+  y dejas `topic-de-prueba-123`, eso es un valor de ejemplo y el doctor lo trata
+  como si faltara: es el error que más se cuela y el que menos se ve.
+
+`doctor` del stack entero incluye esta comprobación al final, precisamente por
+eso: todo lo demás puede estar en verde y aun así no llegarte ni un aviso.
+
+---
+
+
 ## 8. Comprobar
 
 ```bash

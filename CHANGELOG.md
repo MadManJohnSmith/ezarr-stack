@@ -3,6 +3,25 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Este proyecto sigue [SemVer](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Añadido — `ezarrctl secrets`: las credenciales sin abrir un editor
+
+`init`, `list`, `set`, `unset` y `doctor` sobre un único `secrets.conf` en 600
+(`etc/ezarr/secrets.conf.sample` es la plantilla). Ningún subcomando imprime un
+valor, y `doctor` trata un valor de ejemplo sin cambiar como si la clave
+estuviera vacía. `doctor` del stack entero incluye la comprobación al final,
+porque es el fallo que menos se ve: todo en verde y sin que te llegue ni un
+aviso.
+
+### Corregido — el `ezarrctl` instalado no arrancaba
+
+Al copiar `ezarrctl` a `$EZARR_BIN_DIR` solo, se quedaba sin `lib/` al lado y
+moría en el primer `source` con `lib/log.sh: No such file or directory`. En el
+repo todo funcionaba, así que no se veía: el fallo solo aparecía en el teléfono.
+Ahora el instalador copia también `lib/`, y hay una comprobación que ejecuta el
+`ezarrctl` instalado.
+
 ## [1.0.0] — 2026-10-05
 
 Primera versión del instalador y del control central. Todo lo que hay aquí es
