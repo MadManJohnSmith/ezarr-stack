@@ -138,6 +138,7 @@ jobs:
           done
 
           for h in docs/diagrams/*.html; do
+            [ "$h" = "docs/diagrams/index.html" ] && continue
             if ! grep -qxF "$h" <<< "$declared"; then
               echo "HTML huerfano (ningun JSON lo declara): $h"
               fail=1
