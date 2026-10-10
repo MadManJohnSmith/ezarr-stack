@@ -159,7 +159,8 @@ do_start() {
     # Los servicios van en segundo plano y su salida al log, no a la terminal de
     # quien esta jugando con el telefono. Ninguno se queda en primer plano:
     # por eso el arr-stack de apply_activar puede terminar y dejar todo arriba.
-    ( cd "${EZARR_SERVICE_DIR:-/}" 2>/dev/null || cd /; eval "$cmd" ) \
+    # umask 002 cumple la pauta de TRaSH Guides: ficheros 0664 y directorios 0775.
+    ( umask 002; cd "${EZARR_SERVICE_DIR:-/}" 2>/dev/null || cd /; eval "$cmd" ) \
         >>"$EZARR_LOG_DIR/$id.log" 2>&1 &
     sleep "${EZARR_START_WAIT:-2}"
     if svc_running "$id"; then
