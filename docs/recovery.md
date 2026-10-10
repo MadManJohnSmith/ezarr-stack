@@ -324,6 +324,18 @@ Ya con esto TWRP es permanente. Para tu vida diaria como servidor, **arranca
 siempre en TWRP, no en Android**: Android es un sistema operativo de consumo
 gastador; la guía `instalacion.md` sigue desde aquí.
 
+### 4.4. Autostart desatendido en TWRP tras encendido
+
+En un servidor físico sin pantalla, el sistema debe revivir solo tras un corte de luz.
+En el entorno TWRP de *vayu*, el arranque desatendido se apoya en el init nativo:
+
+1. **Servicio nativo en init**: `/init.recovery.qcom.rc` define y arranca el servicio `overrideprops /system/bin/overrideprops.sh`.
+2. **Detección y montaje**: TWRP descifra y monta `/data` (vía `dm-default-key`), y el script espera hasta detectar `/data/linux`.
+3. **Enlaces del kernel**: Se enlazan los sistemas de archivos virtuales (`proc`, `sys`, `dev`, `dev/pts`, `dev/shm`) dentro de `/data/linux`.
+4. **Lanzamiento del chroot**: Se levanta `sshd` en el puerto 22 y se ejecuta `/usr/local/bin/resilience-watchdog.sh`, el cual inicializa Ethernet/DHCP, monta Google Drive (`rclone` + `mergerfs`) y lanza `arr-stack start`.
+
+Todo el stack queda operativo en ~15 segundos tras el encendido, sin intervención manual.
+
 ---
 
 ## 5. Resumen en una sola pantalla

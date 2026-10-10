@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ezarr-stack — Diagramas Interactivos de Arquitectura</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-bright: #f0f6fc;
+      --accent: #58a6ff;
+      --accent-hover: #1f6feb;
+      --success: #3fb950;
+      --warning: #d29922;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      z-index: 10;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--text-bright);
+    }
+    .badge {
+      background: #238636;
+      color: #fff;
+      font-size: 0.72rem;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 500;
+    }
+    nav {
+      display: flex;
+      gap: 8px;
+    }
+    .nav-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .nav-btn:hover {
+      background: #21262d;
+      border-color: #8b949e;
+      color: var(--text-bright);
+    }
+    .nav-btn.active {
+      background: #1f6feb;
+      border-color: #388bfd;
+      color: #fff;
+    }
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .action-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.85rem;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      transition: background 0.2s;
+    }
+    .action-link:hover {
+      background: #21262d;
+      text-decoration: none;
+    }
+    main {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: #010409;
+    }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+    .info-bar {
+      background: var(--card-bg);
+      border-top: 1px solid var(--border);
+      padding: 8px 24px;
+      font-size: 0.8rem;
+      color: #8b949e;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .info-bar a { color: var(--accent); text-decoration: none; }
+    .info-bar a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span style="font-size: 1.3rem;">⚡</span>
+      <h1>ezarr-stack</h1>
+      <span class="badge">TWRP chroot + *arr</span>
+    </div>
+    <nav>
+      <button class="nav-btn active" onclick="loadDiagram('stack-architecture.html', this, 'Arquitectura completa del stack en TWRP chroot (20 servicios, hybrid storage)')">
+        <span>🏛️</span> Arquitectura
+      </button>
+      <button class="nav-btn" onclick="loadDiagram('ciclo-vigilancia-respaldo.html', this, 'Ciclo de watchdog de resiliencia, salud de servicios y respaldo offsite')">
+        <span>🔄</span> Resiliencia y Respaldo
+      </button>
+      <button class="nav-btn" onclick="loadDiagram('flujo-camara.html', this, 'Canal RTSP de cámara IP, motion daemon y notificaciones push vía ntfy')">
+        <span>📹</span> Flujo Cámara
+      </button>
+    </nav>
+    <div class="actions">
+      <a class="action-link" id="open-raw-btn" href="stack-architecture.html" target="_blank" title="Abrir en ventana completa">
+        ↗ Pantalla Completa
+      </a>
+      <a class="action-link" href="https://github.com/MadManJohnSmith/ezarr-stack" target="_blank">
+        GitHub Repo
+      </a>
+    </div>
+  </header>
+  <main>
+    <iframe id="diagram-frame" src="stack-architecture.html"></iframe>
+  </main>
+  <div class="info-bar">
+    <span id="diagram-desc">Arquitectura completa del stack en TWRP chroot (20 servicios, hybrid storage)</span>
+    <span>Desplegado automáticamente vía GitHub Actions | Basado en Luctia/ezarr &amp; Archify</span>
+  </div>
+  <script>
+    function loadDiagram(url, btn, desc) {
+      document.getElementById('diagram-frame').src = url;
+      document.getElementById('open-raw-btn').href = url;
+      document.getElementById('diagram-desc').textContent = desc;
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+  </script>
+</body>
+</html>

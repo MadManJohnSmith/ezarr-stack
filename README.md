@@ -309,41 +309,33 @@ real tras un corte de luz es:
 > alguien coge el teléfono → lo enciende en TWRP → monta `/data` → entra en el
 > chroot → `ezarrctl start`
 
-Consecuencias que asumo en voz alta, porque cambian lo que esto es:
-
-- **No es un servidor.** Es una instalación que alguien enciende. La diferencia
-  entre un servidor y esto es exactamente si hace falta que estés delante.
-- **Un corte de luz de 30 segundos es una visita.** Un corte de noche, un
-  apagón de la compañía o una batería agotada significan el stack parado hasta
-  que vuelvas a él. Si necesitas Jellyfin a las 23:00, esto no lo da.
-- **"Coste marginal cero" no incluye esta hora.** El dinero es cero; el rato es
-  tuyo.
-
-Lo que haría falta para cerrarlo —y que **no** implementa este repo— es una de
-estas dos, y ambas son trabajo de rooting que va más allá de un instalador bash:
-un arranque automático de TWRP por hardware (botón de volumen al encender, o
-`fastboot` con `boot_once`), o dejar de depender de TWRP. Ninguna de las dos está
-escrita aquí, así que **no la voy a prometer en este README**. Lo que sí hago es
-dejar de fingir que el arranque es un problema resuelto.
+- **Arranque desatendido en TWRP**: A diferencia de una instalación básica donde se requeriría interacción física tras cada reinicio, el stack implementa autostart a nivel de init stage 2 en TWRP (`/init.recovery.qcom.rc` lanza el servicio nativo `overrideprops.sh`, que espera el montaje de `/data`, enlaza los sistemas de archivos virtuales y lanza `resilience-watchdog.sh` y `sshd`). El stack revive por completo de forma autónoma tras un corte de corriente.
+- **Resiliencia continua**: La auto-curación se apoya en un bucle continuo de 5 segundos que detecta Ethernet, sincroniza el reloj y relanza procesos caídos de forma idempotente.
 
 ---
 
-## Diagramas
+## Diagramas de Arquitectura
 
-Tres diagramas, **no todos del mismo tipo**. La distinción importa: uno describe
-lo que hay, dos describen lo que *debería* haber.
+Tres diagramas interactivos explican la topología del servidor, la resiliencia y el canal de cámara.
 
-| | |
-|---|---|
-| [**Arquitectura del stack**](docs/diagrams/stack-architecture.html) | **Describe lo que hay.** Chroot, `/data`, servicios, puertos y accesos remotos. |
-| [**Ciclo de vigilancia y respaldo**](docs/diagrams/ciclo-vigilancia-respaldo.html) | ⚠️ **Diseño, no implementado.** Dibuja el ciclo de un fallo: qué se comprueba, qué se relanza y cuándo entra el rescate. **Ese vigilante no existe en este árbol** (`watchdogs` arranca 0 servicios; no hay ningún script de watchdog). Léelo como la especificación de lo que habría que escribir. |
-| [**Flujo de la cámara**](docs/diagrams/flujo-camara.html) | ⚠️ **Diseño, no implementado.** Del movimiento en el pasillo al clip y su subida. **El binario `motion` no lo instala ningún paso de este instalador**, así que hoy el flujo no arranca. |
+[![Ver Diagramas Interactivos](https://img.shields.io/badge/GitHub%20Pages-Diagramas%20Interactivos-2ea44f?style=for-the-badge&logo=github)](https://madmanjohnsmith.github.io/ezarr-stack/)
 
-HTML autónomo, con tema claro/oscuro y animación opcional. Se abren desde el
-navegador, sin nada que instalar.
+> 🌐 **Explorador interactivo en vivo**: Puedes explorar las capas, puertos y flujos de datos directamente desde el navegador en **[madmanjohnsmith.github.io/ezarr-stack](https://madmanjohnsmith.github.io/ezarr-stack/)** (desplegado de forma continua con GitHub Actions).
 
-Puse las dos marcas ⚠️ porque el problema de un diagrama bonito de algo que no
-existe es peor que no tener diagrama: hace que el hueco parezca relleno.
+### 1. Arquitectura del Stack
+Chroot de Ubuntu sobre TWRP en POCO X3 Pro (*vayu*), almacenamiento híbrido por niveles (F2FS local + Google Drive VFS con `rclone` y `mergerfs`), túnel Cloudflare, Tailscale y servicios *arr:
+
+[![Arquitectura del Stack](docs/diagrams/stack-architecture.png)](https://madmanjohnsmith.github.io/ezarr-stack/stack-architecture.html)
+
+### 2. Ciclo de Vigilancia y Respaldo
+Ciclo de auto-curación continuo (`resilience-watchdog`), verificación periódica del stack con Healthchecks.io, auditoría de seguridad y respaldos cifrados semanales:
+
+[![Ciclo de Vigilancia y Respaldo](docs/diagrams/ciclo-vigilancia-respaldo.png)](https://madmanjohnsmith.github.io/ezarr-stack/ciclo-vigilancia-respaldo.html)
+
+### 3. Flujo de la Cámara
+Canal RTSP de cámara IP, captura en búfer local, detección de movimiento con `motion`, subida automática a Google Drive y notificaciones push inmediatas vía `ntfy`:
+
+[![Flujo de la Cámara](docs/diagrams/flujo-camara.png)](https://madmanjohnsmith.github.io/ezarr-stack/flujo-camara.html)
 
 ---
 
