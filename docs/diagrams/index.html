@@ -1,10 +1,9 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ezarr-stack — Diagramas Interactivos de Arquitectura</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <title>ezarr-stack — Interactive Architecture Diagrams</title>
   <style>
     :root {
       --bg: #0d1117;
@@ -15,7 +14,6 @@
       --accent: #58a6ff;
       --accent-hover: #1f6feb;
       --success: #3fb950;
-      --warning: #d29922;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -41,12 +39,13 @@
     .brand {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
     .brand h1 {
       font-size: 1.15rem;
       font-weight: 600;
       color: var(--text-bright);
+      letter-spacing: -0.02em;
     }
     .badge {
       background: #238636;
@@ -55,6 +54,8 @@
       padding: 2px 8px;
       border-radius: 12px;
       font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
     nav {
       display: flex;
@@ -70,9 +71,6 @@
       font-size: 0.85rem;
       font-weight: 500;
       transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      gap: 6px;
     }
     .nav-btn:hover {
       background: #21262d;
@@ -93,7 +91,7 @@
       color: var(--accent);
       text-decoration: none;
       font-size: 0.85rem;
-      padding: 6px 10px;
+      padding: 6px 12px;
       border-radius: 6px;
       border: 1px solid var(--border);
       transition: background 0.2s;
@@ -131,27 +129,26 @@
 <body>
   <header>
     <div class="brand">
-      <span style="font-size: 1.3rem;">⚡</span>
       <h1>ezarr-stack</h1>
-      <span class="badge">TWRP chroot + *arr</span>
+      <span class="badge">Architecture Explorer</span>
     </div>
     <nav>
-      <button class="nav-btn active" onclick="loadDiagram('stack-architecture.html', this, 'Arquitectura completa del stack en TWRP chroot (20 servicios, hybrid storage)')">
-        <span>🏛️</span> Arquitectura
+      <button class="nav-btn active" onclick="loadDiagram('stack-architecture.html', this, 'Full stack topology in TWRP chroot (20 services, mergerfs + Google Drive hybrid storage)')">
+        Stack Architecture
       </button>
-      <button class="nav-btn" onclick="loadDiagram('ciclo-vigilancia-respaldo.html', this, 'Ciclo de watchdog de resiliencia, salud de servicios y respaldo offsite')">
-        <span>🔄</span> Resiliencia y Respaldo
+      <button class="nav-btn" onclick="loadDiagram('ciclo-vigilancia-respaldo.html', this, 'Continuous resilience watchdog loop, health probes, and encrypted offsite backups')">
+        Resilience &amp; Recovery
       </button>
-      <button class="nav-btn" onclick="loadDiagram('flujo-camara.html', this, 'Canal RTSP de cámara IP, motion daemon y notificaciones push vía ntfy')">
-        <span>📹</span> Flujo Cámara
+      <button class="nav-btn" onclick="loadDiagram('flujo-camara.html', this, 'RTSP camera ingestion pipeline, motion detection daemon, and push notification stream')">
+        Camera Pipeline
       </button>
     </nav>
     <div class="actions">
-      <a class="action-link" id="open-raw-btn" href="stack-architecture.html" target="_blank" title="Abrir en ventana completa">
-        ↗ Pantalla Completa
+      <a class="action-link" id="open-raw-btn" href="stack-architecture.html" target="_blank" title="Open selected diagram in full window">
+        Fullscreen View
       </a>
       <a class="action-link" href="https://github.com/MadManJohnSmith/ezarr-stack" target="_blank">
-        GitHub Repo
+        GitHub Repository
       </a>
     </div>
   </header>
@@ -159,8 +156,8 @@
     <iframe id="diagram-frame" src="stack-architecture.html"></iframe>
   </main>
   <div class="info-bar">
-    <span id="diagram-desc">Arquitectura completa del stack en TWRP chroot (20 servicios, hybrid storage)</span>
-    <span>Desplegado automáticamente vía GitHub Actions | Basado en Luctia/ezarr &amp; Archify</span>
+    <span id="diagram-desc">Full stack topology in TWRP chroot (20 services, mergerfs + Google Drive hybrid storage)</span>
+    <span>Automated Deployment via GitHub Actions | Powered by Archify</span>
   </div>
   <script>
     function loadDiagram(url, btn, desc) {

@@ -1,156 +1,184 @@
-# ezarr-stack ⚡
+# ezarr-stack
 
-[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Interactive%20Diagrams-2ea44f?style=for-the-badge&logo=github)](https://madmanjohnsmith.github.io/ezarr-stack/)
-[![Tests](https://img.shields.io/badge/Tests-86%2F86%20Passed-brightgreen?style=for-the-badge)](tests/smoke.sh)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
-[![TRaSH Guides](https://img.shields.io/badge/TRaSH%20Guides-UMASK=002-orange?style=for-the-badge)](https://trash-guides.info/)
+[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Interactive%20Diagrams-2ea44f?style=flat&logo=github)](https://madmanjohnsmith.github.io/ezarr-stack/)
+[![Tests](https://img.shields.io/badge/Tests-86%2F86%20Passed-3fb950?style=flat)](tests/smoke.sh)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)](LICENSE)
+[![TRaSH Guides](https://img.shields.io/badge/TRaSH%20Guides-UMASK=002-orange?style=flat)](https://trash-guides.info/)
+[![Platform](https://img.shields.io/badge/Platform-ARM64%20%7C%20x86__64-lightgrey?style=flat)](#prerequisites)
 
-> **A production-hardened \*arr stack & Jellyfin media server designed for low-power ARM64 single-board computers and decommissioned Android devices running an Ubuntu chroot under TWRP.**
+**Documentation:** [English](README.md) · [Español](README.es.md) · [Interactive Architecture Explorer](https://madmanjohnsmith.github.io/ezarr-stack/)
+
+A production-hardened Servarr stack and Jellyfin media server optimized for low-power ARM64 hardware and repurposed Android devices running an Ubuntu chroot under TWRP. Features native process orchestration without Docker or systemd, tiered hybrid storage (mergerfs + rclone Google Drive VFS), zero-open-port ingress via Cloudflare Zero Trust and Tailscale, and continuous self-healing watchdogs.
+
+---
+
+> [!TIP]
+> **Explore the Architecture Online**
 >
-> 🌐 [**English**](README.md) | 🇪🇸 [**Español**](README.es.md) | 📊 [**Interactive Architecture Explorer**](https://madmanjohnsmith.github.io/ezarr-stack/)
+> You can navigate the complete system topology, service network layers, and tiered storage model in the browser via the **[Interactive Architecture Explorer](https://madmanjohnsmith.github.io/ezarr-stack/)**, deployed automatically on GitHub Pages.
 
 ---
 
-## 🏛️ Interactive Architecture & Topology
+## Architecture Diagrams
 
-Explore the interactive system diagram, service network layers, and hybrid storage topology directly in your browser:
+<p align="center">
+  <a href="https://madmanjohnsmith.github.io/ezarr-stack/stack-architecture.html">
+    <img src="docs/diagrams/stack-architecture.png" alt="Stack Architecture Diagram" width="90%">
+  </a>
+</p>
 
-👉 **[Launch Interactive Architecture Explorer](https://madmanjohnsmith.github.io/ezarr-stack/)** *(Hosted on GitHub Pages)*
+<details>
+<summary><strong>View Additional System Diagrams (Resilience Cycle & Camera Pipeline)</strong></summary>
 
-### 1. Complete Stack Architecture
-Ubuntu chroot running on TWRP (*vayu* / ARM64), hybrid tiered storage (local F2FS flash + Google Drive VFS via Mergerfs), Cloudflare Zero Trust tunnel, Tailscale VPN mesh, and native \*arr binaries:
+### 1. Resilience, Watchdogs & Automated Recovery Cycle
+Continuous 5-second self-healing loop (`resilience-watchdog`), periodic health pings via Healthchecks.io, thermal regulation, automated malware release purging, and weekly offsite backups:
 
-[![Stack Architecture](docs/diagrams/stack-architecture.png)](https://madmanjohnsmith.github.io/ezarr-stack/stack-architecture.html)
+<p align="center">
+  <a href="https://madmanjohnsmith.github.io/ezarr-stack/ciclo-vigilancia-respaldo.html">
+    <img src="docs/diagrams/ciclo-vigilancia-respaldo.png" alt="Resilience and Recovery Cycle" width="85%">
+  </a>
+</p>
 
-### 2. Resilience, Watchdogs & Automated Recovery
-5-second continuous self-healing loop (`resilience-watchdog`), periodic stack health probes via Healthchecks.io, thermal governor, automated malware detection, and encrypted offsite backups:
+### 2. Hallway IP Camera & Motion Stream
+Direct RTSP ingestion, motion detection daemon, local buffering, automatic Google Drive sync, and push notifications via `ntfy`:
 
-[![Resilience & Recovery Cycle](docs/diagrams/ciclo-vigilancia-respaldo.png)](https://madmanjohnsmith.github.io/ezarr-stack/ciclo-vigilancia-respaldo.html)
+<p align="center">
+  <a href="https://madmanjohnsmith.github.io/ezarr-stack/flujo-camara.html">
+    <img src="docs/diagrams/flujo-camara.png" alt="Camera Stream and Motion Pipeline" width="85%">
+  </a>
+</p>
 
-### 3. Hallway Camera & Motion Detection
-RTSP IP camera capture stream, motion detection engine with `motion`, automatic cloud sync, and instant push alerts via `ntfy`:
-
-[![Camera Pipeline](docs/diagrams/flujo-camara.png)](https://madmanjohnsmith.github.io/ezarr-stack/flujo-camara.html)
-
----
-
-## 💡 What Makes ezarr-stack Different?
-
-Most media server guides assume an x86 server running Docker with high electricity consumption and direct SATA drives. **ezarr-stack** solves a completely different engineering challenge: **repurposing silent, low-power ARM64 hardware (under 5W) into a zero-maintenance, enterprise-grade media hub.**
-
-1. **Native Init & Service Control Without Systemd**:
-   Android recovery/chroot kernels do not run systemd or Docker. `arr-stack` provides lightweight process supervision, deterministic stop/start ordering, and persistent `oom_score_adj` tuning (protecting Jellyfin while deprioritizing background crawlers).
-2. **Tiered Hybrid Storage (Mergerfs + Rclone VFS Crypt)**:
-   Overcomes small onboard flash storage by fusing fast local ext4/f2fs storage with Google Drive encrypted cloud storage into a unified `/data/media` mount with transparent auto-offloading.
-3. **TRaSH Guides Standards & POSIX UMASK=002**:
-   All services inherit `UMASK=002`, guaranteeing that downloaded media (`0664`) and directories (`0775`) are atomically accessible by Sonarr, Radarr, and Jellyfin without dangerous `chmod -R 777` loops.
-4. **Dual TCP + UDP BitTorrent Optimization (Port 6881)**:
-   qBittorrent is tuned for modern DHT trackers using hybrid TCP & uTP protocol bindings to eliminate queue stalls and maximize peer connectivity.
-5. **Zero Open WAN Ports (Cloudflare Tunnel + Tailscale Mesh)**:
-   External traffic is securely routed via encrypted Cloudflare Zero Trust tunnels and Tailscale WireGuard meshes. No router port forwarding required.
-6. **Built-in Malicious Release & Executable Interception**:
-   Automated watchdog heuristics immediately detect and purge fake torrent releases containing `.exe` or executable scripts before wasting bandwidth or storage.
-7. **Hands-Off TWRP Autostart**:
-   Full unattended boot from cold hardware shutoff: TWRP init stage 2 executes `overrideprops.sh`, detects `/data/linux`, binds virtual filesystems, and brings up the stack automatically in ~15 seconds.
+</details>
 
 ---
 
-## 📦 Service Catalog & Ports
+## Architectural Comparison
 
-| Service | Port | Description | Managed By |
+Traditional media server guides assume dedicated x86 hardware running Docker, multi-drive SATA arrays, and high electricity consumption. **ezarr-stack** is engineered for an entirely different operational envelope:
+
+| Dimension | Traditional x86 Docker Homelab | ezarr-stack on ARM64 / Phone Chroot |
+|---|---|---|
+| **Power Consumption** | 35W – 120W (continuous wall draw) | **< 5W** (idle ~2W, battery-buffered) |
+| **Cooling & Acoustics** | Active chassis & CPU fans | **100% silent**, passive thermal management |
+| **Supervision Overhead** | Docker daemon, containerd, overlay2 | **Direct binaries**, `arr-stack` supervisor, custom `oom_score_adj` |
+| **Storage Architecture** | Multi-TB physical disks / RAID | **Tiered Hybrid Storage**: fast local flash + Google Drive VFS crypt via mergerfs |
+| **Permissions Model** | Recurring `chmod -R 777` conflicts | **TRaSH Guides Standard**: unified `UMASK=002` (files `0664`, dirs `0775`) |
+| **Network Exposure** | Router port forwards, dynamic DNS | **Zero exposed ports**: dual-replica Cloudflare Tunnel + Tailscale WireGuard |
+| **BitTorrent Transport** | Default TCP-only announces | **Dual TCP + uTP (port 6881)** for resilient DHT bootstrap and tracker announces |
+| **Cold Recovery** | Manual power button or Wake-on-LAN | **Automated TWRP Stage 2 init autostart** via `/init.recovery.qcom.rc` (~15s) |
+| **Malware Defense** | Manual torrent inspection | **Automated heuristic defense**: detects and purges fake `.exe`/script torrents |
+
+---
+
+## Service Catalog
+
+| Service | Port / Protocol | Function | Process Manager |
 |---|---|---|---|
-| **Jellyfin** | `8096` | Hardware-optimized media streaming server | `arr-stack` |
-| **Sonarr** | `8989` | TV show acquisition & episode tracker | `arr-stack` |
-| **Radarr** | `7878` | Movie collection acquisition & metadata | `arr-stack` |
-| **Prowlarr** | `9696` | Torrent indexer proxy & sync engine | `arr-stack` |
-| **Bazarr** | `6767` | Automated subtitle downloader (OpenSubtitles/SubDL) | `arr-stack` |
-| **qBittorrent-nox** | `8080` (Web) / `6881` (TCP/UDP) | BitTorrent client with DHT & uTP enabled | `arr-stack` |
-| **Homarr** | `7575` | Lightweight status dashboard | `arr-stack` |
-| **Nginx** | `80` / `8000` / `443` | Reverse proxy & local LAN gatekeeper | `arr-stack` |
-| **FlareSolverr** | `8191` | Cloudflare challenge solver for indexers | `arr-stack` |
-| **Motion** | `8082` / RTSP | Motion detection & video surveillance | `arr-stack` |
-| **Cloudflared** | Tunnel | Dual-replica Zero Trust remote access | `arr-stack` |
-| **Tailscale** | Tailnet | Secure WireGuard remote administration mesh | `arr-stack` |
-| **Redis** | `6379` | In-memory key-value cache | `arr-stack` |
+| **Jellyfin** | `8096` / HTTP | Media streaming server (DirectPlay prioritized) | `arr-stack` |
+| **Sonarr** | `8989` / HTTP | TV series acquisition and organization | `arr-stack` |
+| **Radarr** | `7878` / HTTP | Movie collection acquisition and metadata | `arr-stack` |
+| **Prowlarr** | `9696` / HTTP | Indexer management and proxy sync | `arr-stack` |
+| **Bazarr** | `6767` / HTTP | Subtitle downloader (OpenSubtitles, SubDL) | `arr-stack` |
+| **qBittorrent-nox** | `8080` (Web) / `6881` (TCP/UDP) | BitTorrent client with DHT, uTP, and eth0 binding | `arr-stack` |
+| **Homarr** | `7575` / HTTP | Lightweight resource dashboard | `arr-stack` |
+| **Nginx** | `80` / `8000` / `443` | Reverse proxy and local LAN gatekeeper | `arr-stack` |
+| **FlareSolverr** | `8191` / HTTP | Cloudflare Turnstile challenge solver | `arr-stack` |
+| **Motion** | `8082` / RTSP | Video motion detection engine | `arr-stack` |
+| **Cloudflared** | Tunnel (QUIC) | Dual-replica Zero Trust external ingress | `arr-stack` |
+| **Tailscale** | Tailnet (WireGuard) | Encrypted administration mesh network | `arr-stack` |
+| **Redis** | `6379` / In-Memory | High-speed cache for applications | `arr-stack` |
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Prerequisites
-- An ARM64 device (e.g. Poco X3 Pro, Raspberry Pi 4/5, or Linux SBC) with an Ubuntu/Debian chroot or base installation.
-- If using an Android smartphone: follow the [TWRP Recovery Guide](docs/recovery.md).
+- An ARM64 device (e.g. Poco X3 Pro, Raspberry Pi 4/5, Rockchip SBC) or an x86_64 host with Ubuntu/Debian.
+- For Android smartphone deployment: review the **[Hardware & TWRP Recovery Guide](docs/recovery.md)**.
 
-### 2. Verify and Dry-Run
-Always inspect the planned operations before modifying system state:
+### 2. Dry-Run Verification
+Inspect all planned binary downloads, directory creations, and configuration writes before modifying system state:
 
 ```bash
-# Preview the installation plan without making changes
+# Preview operations for the minimal profile (Core + Media)
 ./ezarr.sh --dry-run --profile minimal
 ```
 
-### 3. Installation
+### 3. Execution
 ```bash
-# Execute installation
+# Run non-interactive installation
 sudo ./ezarr.sh --yes --profile minimal
 ```
 
 ---
 
-## 🔒 Safe Secrets Management (`ezarrctl secrets`)
+## Secrets Administration (`ezarrctl secrets`)
 
-`ezarr-stack` includes a safe CLI interface for configuring sensitive keys without risk of committing them to git:
+> [!IMPORTANT]
+> Never commit plain-text credentials or API keys to git. `ezarrctl secrets` provides a command-line interface that isolates credentials inside `/etc/ezarr/secrets.conf` with `0600` permissions.
 
 ```bash
 # Initialize secrets configuration
 ezarrctl secrets init
 
-# Set an API key or password
-ezarrctl secrets set EZARR_CAMERA_RTSP_PASS "my-secure-password"
-ezarrctl secrets set EZARR_NTFY_TOPIC "my-private-topic"
-ezarrctl secrets set EZARR_SUBS_API_KEY "my-opensubtitles-key"
+# Set required credentials
+ezarrctl secrets set EZARR_CAMERA_RTSP_PASS "your-camera-password"
+ezarrctl secrets set EZARR_NTFY_TOPIC "your-private-ntfy-topic"
+ezarrctl secrets set EZARR_SUBS_API_KEY "your-opensubtitles-key"
 
-# Verify secrets permissions and presence
+# Verify permissions and absence of default placeholders
 ezarrctl secrets list
 ezarrctl secrets doctor
 ```
 
-All credentials are encrypted or isolated with `0600` permissions in `/etc/ezarr/secrets.conf`.
-
 ---
 
-## 🛠️ Daily Operations (`ezarrctl`)
+## Operations & CLI (`ezarrctl`)
 
-The stack is governed by `ezarrctl`, providing a single unified entry point:
+The stack is governed through a single utility, `ezarrctl`:
 
 ```bash
 ezarrctl status           # Display running/stopped status of all services
 ezarrctl start [service]  # Start one, multiple, or all services
-ezarrctl stop [service]   # Gracefully terminate services
-ezarrctl restart          # Restart services respecting dependency graph
-ezarrctl logs -f [service]# Stream service logs in real time
-ezarrctl backup           # Generate verified database & config backup
-ezarrctl doctor           # Run comprehensive diagnostic checks
+ezarrctl stop [service]   # Terminate services cleanly with forced fallback
+ezarrctl restart          # Sequentially restart respecting dependencies
+ezarrctl logs -f [service]# Stream timestamped logs in real time
+ezarrctl backup           # Generate verified config and database tarball
+ezarrctl doctor           # Run independent health probes on ports and mounts
 ```
 
+<details>
+<summary><strong>View Exit Codes and CLI Specification</strong></summary>
+
+```bash
+ezarrctl exit-codes
+```
+
+| Exit Code | Meaning |
+|---|---|
+| `0` | Success / All probes passed |
+| `1` | General runtime error |
+| `2` | Invalid arguments or command syntax |
+| `3` | Missing configuration or credentials |
+| `4` | Permission denied (root required) |
+| `5` | Network unavailable |
+| `6` | Missing checksum or dependency verification |
+
+</details>
+
 ---
 
-## 📖 Documentation
+## Documentation
 
-- [Hardware & TWRP Recovery Guide](docs/recovery.md)
-- [Complete Installation Guide](docs/instalacion.md)
-- [Daily Operations & Maintenance](docs/operacion.md)
-- [Architecture & Storage Deep Dive](docs/diagrams/stack-architecture.html)
-- [Credits & Attribution](docs/creditos.md)
-
----
-
-## 🤝 Attribution & Credits
-
-`ezarr-stack` was inspired by and built with gratitude to [Luctia/ezarr](https://github.com/Luctia/ezarr) (MIT License) and the community recommendations from [TRaSH Guides](https://trash-guides.info/).
+- **[Hardware & Recovery Guide](docs/recovery.md)** ([Español](docs/recovery.es.md)) — Flashing TWRP, removing FBE encryption, and cold-boot autostart.
+- **[Installation Guide](docs/installation.md)** ([Español](docs/installation.es.md)) — Step-by-step rootfs provisioning and stack deployment.
+- **[Operations Guide](docs/operation.md)** ([Español](docs/operation.es.md)) — Day-to-day maintenance, service control, and backups.
+- **[Credits & Attribution](docs/credits.md)** ([Español](docs/credits.es.md)) — Project origin, Luctia/ezarr, and TRaSH Guides.
 
 ---
 
-## 📄 License
+## Attribution & License
 
-Distributed under the MIT License. See [LICENSE](LICENSE) for details.
+`ezarr-stack` was inspired by and built with gratitude to [Luctia/ezarr](https://github.com/Luctia/ezarr) (MIT License) and the community architectural standards from [TRaSH Guides](https://trash-guides.info/).
+
+Distributed under the [MIT License](LICENSE).

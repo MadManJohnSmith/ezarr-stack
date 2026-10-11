@@ -71,8 +71,8 @@ al stack, es el sistema con el que va a vivir el servidor.**
 
 TWRP → *Mount*. Marca:
 
-- ☑ `data` — **obligatorio**, aquí va todo
-- ☑ `system` — solo para poder leer el `/system/build.prop` si hace falta
+- [x] `data` — **obligatorio**, aquí va todo
+- [x] `system` — solo para poder leer el `/system/build.prop` si hace falta
 
 Comprueba que la barra de arriba pone **"Mounted"**. Si no monta `data`, vuelve
 a Wipe → Format Data (`recovery.md`, paso 4.3).
@@ -589,7 +589,7 @@ ezarrctl doctor --fix                # correcciones seguras
 #   --profile minimal|standard|full        (por defecto standard)
 #   --all                                  atajo de --profile=full
 #   --yes / --dry-run / --offline / --no-progress
-#   -c, --config <ruta>                    ⚠ NO FUNCIONA, ver 4.1
+#   -c, --config <ruta>                    [AVISO] NO FUNCIONA, ver 4.1
 #   --data-root <ruta>                     (por defecto /data)
 #   --release-base <url>
 #   --set NOMBRE=VALOR                     repetible
