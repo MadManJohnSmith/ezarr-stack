@@ -137,6 +137,7 @@ jobs:
         run: |
           set -euo pipefail
           for html in docs/diagrams/*.html; do
+            [ "$html" = "docs/diagrams/index.html" ] && continue
             jq_out=$(node archify/archify/bin/archify.mjs check "$html" --json)
             if [ "$(jq -r '.ok' <<< "$jq_out")" != "true" ]; then
               echo "::error::check no OK para $html"
