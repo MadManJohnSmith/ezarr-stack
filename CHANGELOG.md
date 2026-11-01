@@ -14,6 +14,13 @@ estuviera vacía. `doctor` del stack entero incluye la comprobación al final,
 porque es el fallo que menos se ve: todo en verde y sin que te llegue ni un
 aviso.
 
+### Cambiado — prioridad de qBittorrent y parada forzada de nginx
+
+qBittorrent arranca con `nice 10` e `ionice` best-effort 7 para no quitar CPU/I-O a
+Jellyfin. nginx se para con `nginx -s quit` y, si el master sigue vivo tras 2 s, se
+fuerza `SIGKILL` con `pkill -9 -x nginx`. Dos comprobaciones nuevas en
+`tests/smoke.sh` (86 → 88).
+
 ### Corregido — el `ezarrctl` instalado no arrancaba
 
 Al copiar `ezarrctl` a `$EZARR_BIN_DIR` solo, se quedaba sin `lib/` al lado y

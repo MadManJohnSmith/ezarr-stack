@@ -535,6 +535,13 @@ esac
 unset EZARR_CONF_DIR
 rm -rf "$SEC_DIR" 2>/dev/null || true
 
+# ------------------------------------------------ prioridad de servicios ---
+printf 'arr-stack: prioridad de servicios\n'
+grep -q 'nice -n 10 ionice -c 2 -n 7' "$ROOT/arr-stack" \
+    && ok "qBittorrent arranca con nice/ionice" || bad "qBittorrent arranca con nice/ionice"
+grep -q 'pkill -9 -x nginx' "$ROOT/arr-stack" \
+    && ok "nginx se fuerza si el master no muere" || bad "nginx se fuerza si el master no muere"
+
 # --------------------------------------------------------------- resumen ----
 printf '\n'
 if [ "$N_FAIL" -eq 0 ]; then
