@@ -54,7 +54,7 @@ SERVICES=(
   "redis|core|redis-server|redis-server --daemonize yes|"
   "avahi|core|avahi-daemon|avahi-daemon --daemonize --no-drop-root --exit-idle|"
   "jellyfin|media|/usr/bin/jellyfin|jellyfin --no-autorun|"
-  "qbittorrent|downloads|qbittorrent-nox|qbittorrent-nox -d --webport=8081|"
+  "qbittorrent|downloads|qbittorrent-nox|nice -n 10 ionice -c 2 -n 7 qbittorrent-nox -d --webport=8081|"
   "prowlarr|downloads|/opt/Prowlarr/Prowlarr|/opt/Prowlarr/Prowlarr -nobrowser|"
   "jackett|downloads|jackett|/opt/Jackett/JackettConsole|"
   "sonarr|arr|/opt/Sonarr/Sonarr|/opt/Sonarr/Sonarr -nobrowser|"
@@ -64,7 +64,7 @@ SERVICES=(
   "motion|camera|motion -c|motion -c /etc/motion/motion.conf|"
   "cloudflared|remote|cloudflared tunnel|cloudflared tunnel run|"
   "tailscale|remote|tailscaled|tailscaled --state=/var/lib/tailscale/tailscaled.state|"
-  "nginx|reverse|nginx: master|nginx|nginx -s quit"
+  "nginx|reverse|nginx: master|nginx|nginx -s quit; sleep 2; pgrep -f 'nginx: master' >/dev/null && pkill -9 -x nginx"
   "flaresolverr|search|flaresolverr|flaresolverr|"
 )
 

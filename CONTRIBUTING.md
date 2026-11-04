@@ -12,6 +12,34 @@ promesas de tiempo de respuesta. Sigue si te sirve, y no pasa nada si no.
 3. Nada de secretos: ni claves, ni tokens, ni IPs de tu red local. La suite lo
    comprueba y falla (`bash tests/smoke.sh`), y está bien que falle.
 
+## Qué entra en este repositorio y qué no
+
+Este repo es el producto: instalador, operación, pruebas y documentación. No es
+un volcado de la configuración de un servidor concreto.
+
+**Sí entra:** código del instalador y del plano de control (`ezarr.sh`,
+`ezarrctl`, `arr-stack`, `lib/`), pruebas, documentación en inglés y español,
+diagramas, y plantillas `etc/ezarr/*.sample` con placeholders.
+
+**No entra:**
+
+- Credenciales reales de cualquier tipo: API keys, tokens, contraseñas, hashes,
+  URLs con `usuario:clave@`, topics de notificación. Tampoco cifradas.
+- Datos de una red real: dominio, IPs de LAN o VPN, usuario del sistema, rutas
+  personales, hostnames. El handle de GitHub solo como atribución.
+- Configuración de un servidor en marcha: se convierte en `.sample` con
+  placeholder, o se pide y se genera al instalar.
+- Backups, logs, bases de datos, medios o binarios.
+- Referencias a la topología o a la historia del servidor del autor.
+
+Los placeholders deben reconocerse como tales: vacío, `CHANGE_ME`, `<...>`,
+`PLACEHOLDER` o una variable. La red de ejemplo es `192.168.1.0/24` y el test
+solo admite `.0`, `.1` y `.10`; cualquier otra IP privada falla.
+
+`bash tests/smoke.sh` comprueba la forma de las credenciales, las asignaciones
+con valor y las IPs. No sustituye una revisión: si añades un valor que el test
+no sabe buscar, la responsabilidad sigue siendo tuya.
+
 ## Antes de abrir el PR
 
 ```bash
@@ -35,6 +63,5 @@ de este proyecto es lo único que lo hace distinto de un `docker-compose` más.
 
 ## Licencia
 
-No hay `LICENSE`. Mientras no haya una, manda el copyright por defecto y no se
-acepta nada que se pueda distribuir. Si eres el dueño y quieres elegir licencia,
-eso se decide antes de recibir contribuciones.
+El proyecto se distribuye bajo MIT (ver `LICENSE`). Al abrir un PR aceptas que
+tu contribución se distribuya bajo esa misma licencia.

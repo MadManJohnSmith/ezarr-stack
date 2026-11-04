@@ -1,7 +1,7 @@
 # ezarr-stack
 
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Diagramas%20Interactivos-2ea44f?style=flat&logo=github)](https://madmanjohnsmith.github.io/ezarr-stack/)
-[![Tests](https://img.shields.io/badge/Tests-86%2F86%20Correctas-3fb950?style=flat)](tests/smoke.sh)
+[![Tests](https://img.shields.io/badge/Tests-88%2F88%20Correctas-3fb950?style=flat)](tests/smoke.sh)
 [![Licencia: MIT](https://img.shields.io/badge/Licencia-MIT-blue?style=flat)](LICENSE)
 [![TRaSH Guides](https://img.shields.io/badge/TRaSH%20Guides-UMASK=002-orange?style=flat)](https://trash-guides.info/)
 [![Plataforma](https://img.shields.io/badge/Plataforma-ARM64%20%7C%20x86__64-lightgrey?style=flat)](#requisitos-previos)
